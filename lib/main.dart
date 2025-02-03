@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:graduation_project/ui/splash_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -9,9 +10,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: implement build
-    throw UnimplementedError();
+    return const MaterialApp(
+      home: SplashScreen(), // start point
+    );
   }
 
-  
 }
