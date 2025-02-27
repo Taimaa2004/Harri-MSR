@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:graduation_project/ui/signUp_screen.dart';
-import 'logIn_screen.dart';
+import 'package:graduation_project/ui/signupScreen.dart';
+import 'logInScreen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -10,13 +10,14 @@ class WelcomeScreen extends StatelessWidget {
     return Scaffold(
       body: Container(
         width: double.infinity,
+        height: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: const BoxDecoration(color: Colors.blue),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center, // Center everything
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Image.asset('Images/splash.png', width: 300, height: 320),
-            const SizedBox(height: 60), // Spacing between image and text
+            Image.asset('Images/logo.png', width: 300, height: 320),
+            const SizedBox(height: 60),
             const Text(
               'Reserve your perfect meeting room in seconds!',
               textAlign: TextAlign.left,
@@ -25,16 +26,15 @@ class WelcomeScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   color: Colors.white),
             ),
-            const SizedBox(height: 200), // Spacing before buttons
+            const Spacer(),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center, // Center buttons
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton(
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                          builder: (context) => const LoginScreen()),
+                      MaterialPageRoute(builder: (context) => LoginScreen()),
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -49,13 +49,12 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                   child: const Text('Log in', style: TextStyle(fontSize: 18)),
                 ),
-                const SizedBox(width: 35), // Space between buttons
+                const SizedBox(width: 35),
                 ElevatedButton(
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                          builder: (context) => const SignupScreen()),
+                      MaterialPageRoute(builder: (context) => SignupScreen()),
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -72,6 +71,7 @@ class WelcomeScreen extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 80),
           ],
         ),
       ),
