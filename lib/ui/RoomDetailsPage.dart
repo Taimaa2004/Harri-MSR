@@ -1,96 +1,168 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:syncfusion_flutter_calendar/calendar.dart';
+import 'BookMeetingPage.dart';
 
-class MeetingListPage extends StatelessWidget {
+
+class MeetingListPage extends StatefulWidget {
   final String roomId;
   final String roomName;
-  final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
-  MeetingListPage({super.key, required this.roomId, required this.roomName});
+  const MeetingListPage({super.key, required this.roomId, required this.roomName});
+
+  @override
+  _MeetingListPageState createState() => _MeetingListPageState();
+}
+
+class _MeetingListPageState extends State<MeetingListPage> {
+  FirebaseFirestore firestore = FirebaseFirestore.instance;
+  List<Appointment> meetings = [];
+
+
+  @override
+  void initState() {
+    super.initState();
+    fetchMeetings();
+  }
+
+  void fetchMeetings() {
+    firestore
+        .collection('Meetings')
+        .where('room_id', isEqualTo: widget.roomId)
+        .snapshots()
+        .listen((snapshot) {
+      List<Appointment> fetchedMeetings = [];
+
+      for (var doc in snapshot.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        DateTime? startTime = (data['start_time'] as Timestamp?)?.toDate();
+        DateTime? endTime = (data['end_time'] as Timestamp?)?.toDate();
+        String meetingName = data['title'] ?? 'Untitled Meeting';
+
+        if (startTime != null && endTime != null) {
+          fetchedMeetings.add(Appointment(
+            startTime: startTime,
+            endTime: endTime,
+            subject: meetingName,
+            color: Colors.blueAccent,
+            id: doc.id, // Store meeting ID for editing
+          ));
+        }
+      }
+
+      setState(() {
+        meetings = fetchedMeetings;
+      });
+    });
+  }
+
+  void onTap(CalendarTapDetails details) {
+    if (details.targetElement == CalendarElement.appointment) {
+      Appointment appointment = details.appointments!.first;
+      showMeetingDetails(appointment);
+    } else {
+      DateTime selectedTime = details.date!;
+      bookMeeting(selectedTime);
+    }
+  }
+
+  void showMeetingDetails(Appointment appointment) {
+    String startDate = DateFormat('yyyy-MM-dd').format(appointment.startTime);
+    String startTime = DateFormat('HH:mm').format(appointment.startTime);
+    String endTime = DateFormat('HH:mm').format(appointment.endTime);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(appointment.subject),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("Date: $startDate "),
+            Text("Start Time: $startTime"),
+            Text("End Time: $endTime"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  void bookMeeting(DateTime selectedTime) async {
+    bool isOverlapping = meetings.any((meeting) =>
+    (selectedTime.isAfter(meeting.startTime) &&
+        selectedTime.isBefore(meeting.endTime)) ||
+        selectedTime.isAtSameMomentAs(meeting.startTime));
+
+    if (isOverlapping) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("This time slot is already booked!")),
+      );
+      return;
+    }
+
+    // Navigate to booking page
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookMeetingScreen(selectedTime: selectedTime, roomId: widget.roomId),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text("$roomName - Meetings Details"),
+        title: Text(
+          widget.roomName,
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.blue[600],
-        toolbarHeight: 90,
+        toolbarHeight: 80,
         foregroundColor: Colors.white,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: firestore
-            .collection('Meetings')
-            .where('room_id', isEqualTo: roomId)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(child: Text("No meetings available"));
-          }
-          var meetings = snapshot.data!.docs;
-          return ListView.builder(
-            itemCount: meetings.length,
-            itemBuilder: (context, index) {
-              var meeting =
-                  meetings[index].data() as Map<String, dynamic>? ?? {};
-              String meetingName =
-                  meeting['Meeting_name'] ?? 'Untitled Meeting';
-              DateTime? startTime =
-                  (meeting['start_time'] as Timestamp?)?.toDate();
-              DateTime? endTime = (meeting['end_time'] as Timestamp?)?.toDate();
-              String startFormatted = startTime != null
-                  ? DateFormat('HH:mm').format(startTime)
-                  : 'No Start Time';
-              String endFormatted = endTime != null
-                  ? DateFormat('HH:mm').format(endTime)
-                  : 'No End Time';
-              String dateFormatted = startTime != null
-                  ? DateFormat('yyyy-MM-dd').format(startTime)
-                  : 'No Date';
-
-              return Card(
-                margin: EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-                elevation: 5,
-                child: Padding(
-                  padding: const EdgeInsets.all(15.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        meetingName,
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        "Date: $dateFormatted",
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                      SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "Start: $startFormatted",
-                            style: TextStyle(fontSize: 14, color: Colors.grey),
-                          ),
-                          Text(
-                            "End: $endFormatted",
-                            style: TextStyle(fontSize: 14, color: Colors.grey),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
+      body: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: SfCalendar(
+          view: CalendarView.day,
+          showNavigationArrow: true,
+          showWeekNumber: true,
+          dataSource: MeetingDataSource(meetings),
+          onTap: onTap,
+          timeSlotViewSettings: TimeSlotViewSettings(
+            timeTextStyle: TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
+          ),
+          todayHighlightColor: Colors.blueAccent,
+          selectionDecoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blueAccent, width: 1.5),
+          ),
+          appointmentTextStyle: TextStyle(
+            fontSize: 14,
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
+
+  }
+
+}
+
+class MeetingDataSource extends CalendarDataSource {
+  MeetingDataSource(List<Appointment> source) {
+    appointments = source;
   }
 }
+

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:graduation_project/ui/flow1/SelectDateTimeScreen.dart';
 import 'package:graduation_project/ui/profileScreen.dart';
 import 'package:graduation_project/ui/teamScreen.dart';
 import 'package:intl/intl.dart';
@@ -70,7 +71,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       floatingActionButton: currentPageIndex == 0
           ? FloatingActionButton(
               onPressed: () {
-                // Handle button action
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const AddMeeting1()),
+                );
               },
               backgroundColor: Colors.blue[200],
               child: Icon(Icons.add, size: 30, color: Colors.indigo),

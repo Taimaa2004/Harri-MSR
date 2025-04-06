@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:email_validator/email_validator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:graduation_project/ui/workspace/createWorkspace.dart';
 import 'package:graduation_project/ui/dashboard_screen.dart';
 import 'package:graduation_project/ui/loginScreen.dart';
 
@@ -44,10 +45,10 @@ class _SignupScreenState extends State<SignupScreen> {
         'password': passwordController.text.trim(),
       });
 
-      Navigator.pushAndRemoveUntil(
+      Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => DashboardScreen()),
-            (route) => false,
+        MaterialPageRoute(builder: (context) => CreateWorkspace()),
+         //   (route) => false,
       );
 
     } on FirebaseAuthException catch (e) {
@@ -171,7 +172,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: _isLoading
                           ? const CircularProgressIndicator(color: Colors.lightBlue)
                           : const Text(
-                        'Sign Up',
+                        'Continue',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
