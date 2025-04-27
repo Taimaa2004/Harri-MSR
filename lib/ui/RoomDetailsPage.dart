@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:graduation_project/ui/showRoomsDetails.dart';
 import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'BookMeetingPage.dart';
-
+import 'package:toggle_switch/toggle_switch.dart';
 
 class MeetingListPage extends StatefulWidget {
   final String roomId;
   final String roomName;
 
-  const MeetingListPage({super.key, required this.roomId, required this.roomName});
+  const MeetingListPage(
+      {super.key, required this.roomId, required this.roomName});
 
   @override
   _MeetingListPageState createState() => _MeetingListPageState();
@@ -18,7 +20,6 @@ class MeetingListPage extends StatefulWidget {
 class _MeetingListPageState extends State<MeetingListPage> {
   FirebaseFirestore firestore = FirebaseFirestore.instance;
   List<Appointment> meetings = [];
-
 
   @override
   void initState() {
@@ -94,11 +95,10 @@ class _MeetingListPageState extends State<MeetingListPage> {
     );
   }
 
-
   void bookMeeting(DateTime selectedTime) async {
     bool isOverlapping = meetings.any((meeting) =>
-    (selectedTime.isAfter(meeting.startTime) &&
-        selectedTime.isBefore(meeting.endTime)) ||
+        (selectedTime.isAfter(meeting.startTime) &&
+            selectedTime.isBefore(meeting.endTime)) ||
         selectedTime.isAtSameMomentAs(meeting.startTime));
 
     if (isOverlapping) {
@@ -107,12 +107,11 @@ class _MeetingListPageState extends State<MeetingListPage> {
       );
       return;
     }
-
-    // Navigate to booking page
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => BookMeetingScreen(selectedTime: selectedTime, roomId: widget.roomId),
+        builder: (context) => BookMeetingScreen(
+            selectedTime: selectedTime, roomId: widget.roomId),
       ),
     );
   }
@@ -132,32 +131,57 @@ class _MeetingListPageState extends State<MeetingListPage> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: SfCalendar(
-          view: CalendarView.day,
-          showNavigationArrow: true,
-          showWeekNumber: true,
-          dataSource: MeetingDataSource(meetings),
-          onTap: onTap,
-          timeSlotViewSettings: TimeSlotViewSettings(
-            timeTextStyle: TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
-          ),
-          todayHighlightColor: Colors.blueAccent,
-          selectionDecoration: BoxDecoration(
-            color: Colors.blue[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blueAccent, width: 1.5),
-          ),
-          appointmentTextStyle: TextStyle(
-            fontSize: 14,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+        child: Column(
+          children: [
+            ToggleSwitch(
+              minWidth: 200,
+              fontSize: 20,
+              totalSwitches: 2,
+              labels: ['Meetings', 'Details'],
+              onToggle: (index) {
+                if (index == 1) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => Showroomsdetails(
+                              roomId: widget.roomId,
+                            )),
+                  );
+                }
+              },
+            ),
+            Expanded(
+              child: SfCalendar(
+                view: CalendarView.day,
+                showNavigationArrow: true,
+                showWeekNumber: true,
+                dataSource: MeetingDataSource(meetings),
+                onTap: onTap,
+                timeSlotViewSettings: TimeSlotViewSettings(
+                  timeTextStyle: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w500),
+                ),
+                todayHighlightColor: Colors.blueAccent,
+                selectionDecoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blueAccent, width: 1.5),
+                ),
+                appointmentTextStyle: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+          ],
         ),
       ),
     );
-
   }
-
 }
 
 class MeetingDataSource extends CalendarDataSource {
@@ -165,4 +189,3 @@ class MeetingDataSource extends CalendarDataSource {
     appointments = source;
   }
 }
-

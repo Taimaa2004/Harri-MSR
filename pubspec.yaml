@@ -45,6 +45,7 @@ dependencies:
   flutter_calendar_carousel: ^2.4.3
   board_datetime_picker: 2.5.0
   syncfusion_flutter_calendar: ^29.1.35
+  toggle_switch: ^2.3.0
 
 
 
