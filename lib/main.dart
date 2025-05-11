@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:graduation_project/ui/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:provider/provider.dart';
+import 'Screens/Drawer/Preference/theme_provider.dart';
+import 'Screens/Splash/splash_screen.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -8,7 +10,12 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -16,9 +23,21 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return MaterialApp(
-      theme: ThemeData(colorSchemeSeed: Colors.blue, useMaterial3: true),
-      home: const SplashScreen(), // start point
+      themeMode: themeProvider.themeMode,
+      theme: ThemeData(
+        colorSchemeSeed: Colors.blue,
+        brightness: Brightness.light,
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
+        colorSchemeSeed: Colors.blue,
+        brightness: Brightness.dark,
+        useMaterial3: true,
+      ),
+      home: const SplashScreen(),
     );
   }
 }
