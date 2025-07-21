@@ -1,0 +1,2 @@
+/Users/taimaajweles/StudioProjects/graduation_project/android/app/.cxx/Debug/y121e2hf/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/taimaajweles/StudioProjects/graduation_project/android/app/.cxx/Debug/y121e2hf/armeabi-v7a/CMakeFiles/rebuild_cache.dir
