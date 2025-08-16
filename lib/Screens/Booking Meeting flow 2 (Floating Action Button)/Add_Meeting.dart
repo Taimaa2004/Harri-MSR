@@ -5,12 +5,10 @@ import 'package:intl/intl.dart';
 
 class BookingScreen extends StatefulWidget {
   final String roomId;
-  final String meetingTitle;
 
   const BookingScreen({
     super.key,
     required this.roomId,
-    required this.meetingTitle,
   });
 
   @override
@@ -24,6 +22,7 @@ class _BookingScreenState extends State<BookingScreen> {
   bool loading = true;
   String memberSearch = '';
   TextEditingController notesController = TextEditingController();
+  TextEditingController titleController = TextEditingController(); // Meeting title controller
 
   String? roomName;
   int? capacity;
@@ -48,12 +47,16 @@ class _BookingScreenState extends State<BookingScreen> {
   @override
   void dispose() {
     notesController.dispose();
+    titleController.dispose();
     super.dispose();
   }
 
   Future<void> fetchRoomDetails() async {
     try {
-      final snap = await FirebaseFirestore.instance.collection('meeting_rooms').doc(widget.roomId).get();
+      final snap = await FirebaseFirestore.instance
+          .collection('meeting_rooms')
+          .doc(widget.roomId)
+          .get();
       if (snap.exists) {
         final room = snap.data()!;
         setState(() {
@@ -67,13 +70,21 @@ class _BookingScreenState extends State<BookingScreen> {
       } else {
         setState(() {
           roomName = "Unknown Room";
-          capacity = 0; equipment = []; location = "N/A"; status = "N/A"; loading = false;
+          capacity = 0;
+          equipment = [];
+          location = "N/A";
+          status = "N/A";
+          loading = false;
         });
       }
     } catch (_) {
       setState(() {
         roomName = "Error loading room";
-        capacity = 0; equipment = []; location = "Error"; status = "Error"; loading = false;
+        capacity = 0;
+        equipment = [];
+        location = "Error";
+        status = "Error";
+        loading = false;
       });
     }
   }
@@ -99,6 +110,9 @@ class _BookingScreenState extends State<BookingScreen> {
     final firestore = FirebaseFirestore.instance;
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return showMessage("No user logged in.");
+
+    final meetingTitle = titleController.text.trim();
+    if (meetingTitle.isEmpty) return showMessage("Please enter a meeting title.");
 
     if (!selectedMemberIds.contains(currentUser.uid)) selectedMemberIds.add(currentUser.uid);
 
@@ -138,7 +152,7 @@ class _BookingScreenState extends State<BookingScreen> {
         'room_id': widget.roomId,
         'start_time': Timestamp.fromDate(startDate),
         'end_time': Timestamp.fromDate(endDate),
-        'title': widget.meetingTitle,
+        'title': meetingTitle,
         'users': selectedMemberIds,
         'notes': notesController.text.trim(),
       });
@@ -146,11 +160,11 @@ class _BookingScreenState extends State<BookingScreen> {
       for (final userId in selectedMemberIds) {
         try {
           final msg = userId == currentUser.uid
-              ? 'You created "${widget.meetingTitle}" at ${DateFormat('yyyy-MM-dd HH:mm').format(startDate)}'
-              : 'You have been invited to "${widget.meetingTitle}"';
+              ? 'You created "$meetingTitle" at ${DateFormat('yyyy-MM-dd HH:mm').format(startDate)}'
+              : 'You have been invited to "$meetingTitle"';
           await firestore.collection('notifications').add({
             'userId': userId,
-            'title': widget.meetingTitle,
+            'title': meetingTitle,
             'body': msg,
             'senderName': currentUser.email ?? 'Unknown',
             'timestamp': Timestamp.now(),
@@ -162,7 +176,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
     setState(() {
       bookingSummary =
-      'Room: $roomName\nDate: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedStartTime)}\nTitle: ${widget.meetingTitle}\nMembers: ${selectedMemberIds.length}\nNotes: ${notesController.text.trim()}';
+      'Room: $roomName\nDate: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedStartTime)}\nTitle: $meetingTitle\nMembers: ${selectedMemberIds.length}\nNotes: ${notesController.text.trim()}';
     });
 
     showDialog(
@@ -187,14 +201,18 @@ class _BookingScreenState extends State<BookingScreen> {
       context: context,
       builder: (_) => AlertDialog(
         content: Text(msg),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('OK'))
+        ],
       ),
     );
   }
 
   Widget buildEquipmentChips() {
     if (equipment == null || equipment!.isEmpty) {
-      return const Text("No equipment available", style: TextStyle(fontStyle: FontStyle.italic));
+      return const Text("No equipment available",
+          style: TextStyle(fontStyle: FontStyle.italic));
     }
     return Wrap(
       spacing: 8,
@@ -203,7 +221,8 @@ class _BookingScreenState extends State<BookingScreen> {
         return Chip(
           label: Text(eq),
           backgroundColor: Colors.blue.shade50,
-          labelStyle: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.w600),
+          labelStyle: TextStyle(
+              color: Colors.blue.shade900, fontWeight: FontWeight.w600),
           avatar: const Icon(Icons.settings, size: 18, color: Colors.blueAccent),
         );
       }).toList(),
@@ -243,10 +262,11 @@ class _BookingScreenState extends State<BookingScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
+                  const SizedBox(height: 12),
+
+                  // --- Room Info ---
                   Text(roomName ?? 'Loading...', style: theme.textTheme.titleLarge!.copyWith(color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(location ?? '-', style: theme.textTheme.bodyMedium),
-                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Icon(Icons.group, color: Colors.blue.shade700),
@@ -263,6 +283,19 @@ class _BookingScreenState extends State<BookingScreen> {
                   const SizedBox(height: 6),
                   buildEquipmentChips(),
                   const Divider(height: 32, thickness: 1, color: Colors.blueGrey),
+
+                  // --- Start/End Time Cards ---
+                  // --- Meeting Title Field ---
+                  TextField(
+                    controller: titleController,
+                    decoration: InputDecoration(
+                      labelText: 'Meeting Title',
+                      prefixIcon: const Icon(Icons.title),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
                   Card(
                     elevation: 3,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -271,9 +304,10 @@ class _BookingScreenState extends State<BookingScreen> {
                       title: Text('Start Time', style: TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text(DateFormat('EEE, MMM d, yyyy • HH:mm').format(selectedStartTime)),
                       trailing: const Icon(Icons.lock, color: Colors.grey),
-                      // Disabled changing start time
                     ),
                   ),
+                  const SizedBox(height: 10),
+
                   Card(
                     elevation: 3,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -301,7 +335,10 @@ class _BookingScreenState extends State<BookingScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 12),
+
+                  const SizedBox(height: 15),
+
+                  // --- Recurrence Dropdown ---
                   DropdownButtonFormField<String>(
                     value: recurrenceType,
                     decoration: const InputDecoration(
@@ -309,9 +346,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.repeat, color: Colors.blue),
                     ),
-                    items: recurrenceOptions
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
+                    items: recurrenceOptions.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                     onChanged: (val) {
                       setState(() {
                         recurrenceType = val!;
@@ -319,6 +354,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       });
                     },
                   ),
+
                   if (recurrenceType == 'Weekly')
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -330,9 +366,7 @@ class _BookingScreenState extends State<BookingScreen> {
                             selected: selectedWeekDays.contains(e.key),
                             onSelected: (val) {
                               setState(() {
-                                val
-                                    ? selectedWeekDays.add(e.key)
-                                    : selectedWeekDays.remove(e.key);
+                                val ? selectedWeekDays.add(e.key) : selectedWeekDays.remove(e.key);
                               });
                             },
                             backgroundColor: Colors.blue.shade50,
@@ -342,6 +376,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         }).toList(),
                       ),
                     ),
+
                   if (recurrenceType != 'None')
                     ListTile(
                       leading: const Icon(Icons.calendar_today, color: Colors.blue),
@@ -358,7 +393,9 @@ class _BookingScreenState extends State<BookingScreen> {
                         if (date != null) setState(() => repeatUntil = date);
                       },
                     ),
-                  const Divider(height: 32, thickness: 1, color: Colors.blueGrey),
+
+
+                  // --- Members Selection ---
                   ExpansionTile(
                     title: Text(
                       "Select Members (${selectedMemberIds.length})",
@@ -403,7 +440,10 @@ class _BookingScreenState extends State<BookingScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const Divider(height: 32, thickness: 1, color: Colors.blueGrey),
+
+
+                  // --- Notes Field ---
                   TextField(
                     controller: notesController,
                     maxLines: 3,
@@ -413,7 +453,10 @@ class _BookingScreenState extends State<BookingScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
+
                   const SizedBox(height: 24),
+
+                  // --- Book Button ---
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue.shade700,
@@ -425,7 +468,6 @@ class _BookingScreenState extends State<BookingScreen> {
                     onPressed: saveMeeting,
                     child: const Text("Book Meeting", style: TextStyle(fontSize: 18)),
                   ),
-
                 ],
               ),
             ),

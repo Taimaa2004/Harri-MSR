@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'RoomSpecificationsScreen.dart';
 import 'Add_Meeting.dart';
 
 class AddMeeting1 extends StatefulWidget {
@@ -14,7 +15,12 @@ class _AddMeeting1State extends State<AddMeeting1> {
   TimeOfDay? startTime;
   List<DocumentSnapshot> availableRoomDocs = [];
   bool isLoading = false;
-  String meetingTitle = "";
+
+  Map<String, dynamic> selectedSpecs = {
+    "capacity": 0,
+    "location": "",
+    "equipments": []
+  };
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -60,6 +66,10 @@ class _AddMeeting1State extends State<AddMeeting1> {
       return;
     }
 
+    final hasSpecs = selectedSpecs["capacity"] != 0 ||
+        (selectedSpecs["equipments"] as List).isNotEmpty ||
+        selectedSpecs["location"].toString().isNotEmpty;
+
     setState(() {
       isLoading = true;
       availableRoomDocs.clear();
@@ -73,27 +83,93 @@ class _AddMeeting1State extends State<AddMeeting1> {
       startTime!.minute,
     );
 
-
     final availableRoomIds = await getAvailableRooms(selectedStartDateTime);
 
-    final QuerySnapshot roomSnapshot =
-    await _firestore.collection('meeting_rooms').get();
+    if (availableRoomIds.isEmpty) {
+      setState(() {
+        isLoading = false;
+      });
+      _showPopup("No rooms available at the selected time.");
+      return;
+    }
 
-    final matchingDocs = roomSnapshot.docs
-        .where((doc) => availableRoomIds.contains(doc.id))
-        .toList();
+    try {
+      final roomSnapshot = await _firestore
+          .collection('meeting_rooms')
+          .where(FieldPath.documentId, whereIn: availableRoomIds)
+          .get();
 
-    setState(() {
-      availableRoomDocs = matchingDocs;
-      isLoading = false;
-    });
+      final matchingDocs = roomSnapshot.docs.where((doc) {
+        // Safe checks
+        int roomCapacity = 0;
+        if (doc.data().containsKey('capacity')) {
+          final rawCapacity = doc['capacity'];
+          if (rawCapacity is int) {
+            roomCapacity = rawCapacity;
+          } else if (rawCapacity is String) {
+            roomCapacity = int.tryParse(rawCapacity) ?? 0;
+          }
+        }
+
+        String roomLocation = '';
+        if (doc.data().containsKey('location')) {
+          roomLocation = doc['location'] ?? '';
+        }
+
+        List roomEquipments = [];
+        if (doc.data().containsKey('equipments')) {
+          final rawEquipments = doc['equipments'];
+          if (rawEquipments is List) {
+            roomEquipments = rawEquipments;
+          } else if (rawEquipments is String) {
+            roomEquipments = [rawEquipments];
+          }
+        }
+
+        if (!hasSpecs) return true;
+
+        final capacityOk = roomCapacity >= (selectedSpecs['capacity'] ?? 0);
+        final locationOk = selectedSpecs['location'].toString().isEmpty ||
+            roomLocation.toLowerCase() ==
+                selectedSpecs['location'].toString().toLowerCase();
+
+        List selectedEquipments = [];
+        final rawSelectedEquipments = selectedSpecs['equipments'];
+        if (rawSelectedEquipments is List) {
+          selectedEquipments = rawSelectedEquipments;
+        } else if (rawSelectedEquipments is String &&
+            rawSelectedEquipments.isNotEmpty) {
+          selectedEquipments = [rawSelectedEquipments];
+        }
+
+        final equipmentsOk =
+        selectedEquipments.every((eq) => roomEquipments.contains(eq));
+
+        return capacityOk && locationOk && equipmentsOk;
+      }).toList();
+
+      setState(() {
+        availableRoomDocs = matchingDocs;
+        isLoading = false;
+      });
+
+      if (matchingDocs.isEmpty) {
+        _showPopup("No rooms match the selected specifications.");
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      print("Error fetching rooms: $e");
+      _showPopup("Error fetching rooms. Please try again.");
+    }
   }
 
   Future<List<String>> getAvailableRooms(DateTime selectedStartDateTime) async {
     final bookedRooms = <String>[];
+    final selectedEndDateTime = selectedStartDateTime.add(const Duration(hours: 1));
 
     try {
-      // Get all booked meetings
       final meetingsSnapshot = await _firestore.collection('Meetings').get();
 
       for (var meeting in meetingsSnapshot.docs) {
@@ -101,16 +177,17 @@ class _AddMeeting1State extends State<AddMeeting1> {
         final mStart = (meeting['start_time'] as Timestamp).toDate();
         final mEnd = (meeting['end_time'] as Timestamp).toDate();
 
-        if (!selectedStartDateTime.isBefore(mStart) && !selectedStartDateTime.isAfter(mEnd)) {
+        if (selectedStartDateTime.isBefore(mEnd) &&
+            selectedEndDateTime.isAfter(mStart)) {
           bookedRooms.add(mRoomId.toString());
         }
       }
 
       final roomsSnapshot = await _firestore.collection('meeting_rooms').get();
-      final allRooms = roomsSnapshot.docs.map((doc) => doc.id.toString()).toList();
+      final allRooms =
+      roomsSnapshot.docs.map((doc) => doc.id.toString()).toList();
 
-      final availableRooms = allRooms.where((roomId) => !bookedRooms.contains(roomId)).toList();
-      return availableRooms;
+      return allRooms.where((roomId) => !bookedRooms.contains(roomId)).toList();
     } catch (e) {
       print("Error fetching available rooms: $e");
       return [];
@@ -133,46 +210,41 @@ class _AddMeeting1State extends State<AddMeeting1> {
   }
 
   Widget _buildRoomList() {
-    if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (isLoading) return const Center(child: CircularProgressIndicator());
 
     if (availableRoomDocs.isEmpty) {
       return const Center(
-        child: Text("No rooms available for selected time.",
-            style: TextStyle(color: Colors.grey)),
+        child: Text(
+          "No rooms available for selected time and specs.",
+          style: TextStyle(color: Colors.grey),
+        ),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text("Available Rooms:",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        ...availableRoomDocs.map((roomDoc) {
-          final roomName = roomDoc['name'];
-          final roomId = roomDoc.id;
-          return Card(
-            elevation: 3,
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            child: ListTile(
-              leading: const Icon(Icons.meeting_room, color: Colors.blueAccent),
-              title: Text(roomName),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BookingScreen(
-                    roomId: roomId,  // Passing the correct roomId
-                    meetingTitle: meetingTitle,
-                  ),
+      children: availableRoomDocs.map((roomDoc) {
+        final roomName = roomDoc['name'] ?? "Unknown";
+        final roomId = roomDoc.id;
+        return Card(
+          elevation: 3,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: ListTile(
+            leading: const Icon(Icons.meeting_room, color: Colors.blueAccent),
+            title: Text(roomName),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BookingScreen(
+                  roomId: roomId,
                 ),
               ),
             ),
-          );
-        })
-      ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -202,36 +274,6 @@ class _AddMeeting1State extends State<AddMeeting1> {
     );
   }
 
-  void _showMeetingTitleDialog() async {
-    final titleController = TextEditingController();
-
-    await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Enter Meeting Title"),
-        content: TextField(
-          controller: titleController,
-          decoration: const InputDecoration(hintText: "Meeting Title"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                meetingTitle = titleController.text;
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -244,14 +286,6 @@ class _AddMeeting1State extends State<AddMeeting1> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Meeting Details",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-            _buildSelectionCard(
-              icon: Icons.text_fields,
-              label: meetingTitle.isEmpty ? "Meeting Title" : meetingTitle,
-              onTap: _showMeetingTitleDialog,
-            ),
             _buildSelectionCard(
               icon: Icons.calendar_today,
               label: _formatDate(selectedDate),
@@ -262,7 +296,56 @@ class _AddMeeting1State extends State<AddMeeting1> {
               label: _formatTime(startTime),
               onTap: _pickStartTime,
             ),
-            const SizedBox(height: 10),
+            _buildSelectionCard(
+              icon: Icons.settings,
+              label: "Room Specifications",
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        RoomSpecificationsScreen(selectedSpecs: selectedSpecs),
+                  ),
+                );
+                if (result != null) {
+                  setState(() {
+                    selectedSpecs = Map<String, dynamic>.from(result);
+                  });
+                }
+              },
+            ),
+
+            if (selectedSpecs.isNotEmpty &&
+                (selectedSpecs["capacity"] != 0 ||
+                    (selectedSpecs["equipments"] as List).isNotEmpty ||
+                    selectedSpecs["location"].toString().isNotEmpty))
+              Card(
+                elevation: 2,
+                color: Colors.grey[100],
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                margin: const EdgeInsets.only(bottom: 16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("Selected Specifications",
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      if (selectedSpecs["capacity"] != 0)
+                        Text("Capacity: ${selectedSpecs["capacity"]}"),
+                      if (selectedSpecs["location"].toString().isNotEmpty)
+                        Text("Location: ${selectedSpecs["location"]}"),
+                      if ((selectedSpecs["equipments"] as List).isNotEmpty)
+                        Text(
+                            "Equipments: ${(selectedSpecs["equipments"] as List).join(", ")}"),
+                    ],
+                  ),
+                ),
+              ),
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
