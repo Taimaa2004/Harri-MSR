@@ -63,10 +63,10 @@ class ProfileBody extends StatelessWidget {
           children: [
             Center(
               child: ClipOval(
-                  child: CircleAvatar(
-                    radius: 60,
-                    child: Icon(Icons.person, size: 60, color: Colors.blueAccent),
-                  ),
+                child: CircleAvatar(
+                  radius: 60,
+                  child: Icon(Icons.person, size: 60, color: Colors.blueAccent),
+                ),
               ),
             ),
             SizedBox(height: 20),

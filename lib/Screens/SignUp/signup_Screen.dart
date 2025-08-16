@@ -75,8 +75,10 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.blue,
@@ -85,52 +87,47 @@ class _SignupScreenState extends State<SignupScreen> {
       body: Column(
         children: [
           Container(
-            color: Colors.blue,
-            child: Expanded(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 15, top: 1),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          "Sign Up,",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 40,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        Text(
-                          "Create an Account!",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 40,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: Colors.blue,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 25, vertical:5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  "Sign Up,",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 35,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
                   ),
                 ),
-              ),
+                Text(
+                  "Create an Account!",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 37,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
-          Container(
-            width: double.infinity,
-            height: MediaQuery.of(context).size.height * 0.72,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(60),
-                topRight: Radius.circular(60),
+
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 40,
+                right: 40,
+                top: 50,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
               ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.only(top: 50, left: 40, right: 40),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -139,15 +136,14 @@ class _SignupScreenState extends State<SignupScreen> {
                     const SizedBox(height: 15),
                     _buildTextField(lastNameController, "Last Name", Icons.person),
                     const SizedBox(height: 15),
-                    _buildTextField(emailController, "Email", Icons.email,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter an email';
-                          } else if (!EmailValidator.validate(value)) {
-                            return 'Please enter a valid email';
-                          }
-                          return null;
-                        }),
+                    _buildTextField(emailController, "Email", Icons.email, validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter an email';
+                      } else if (!EmailValidator.validate(value)) {
+                        return 'Please enter a valid email';
+                      }
+                      return null;
+                    }),
                     const SizedBox(height: 15),
                     _buildTextField(passwordController, "Password", Icons.lock, obscureText: true),
                     const SizedBox(height: 15),
@@ -185,11 +181,13 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                       ),
                     const SizedBox(height: 20),
-                    const Text("Already have an account?",
-                        style: TextStyle(color: Colors.black, fontSize: 17)),
+                    const Text(
+                      "Already have an account?",
+                      style: TextStyle(color: Colors.black, fontSize: 17),
+                    ),
                     TextButton(
                       onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => LoginScreen()));
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen()));
                       },
                       child: const Text(
                         "Log in",

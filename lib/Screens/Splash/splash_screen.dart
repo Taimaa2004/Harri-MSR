@@ -16,9 +16,12 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     checkLoginStatus();
+
     Future.delayed(const Duration(seconds: 5), () {
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const WelcomeScreen()));
+        MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+      );
     });
   }
 
@@ -26,6 +29,7 @@ class _SplashScreenState extends State<SplashScreen>
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => DashboardScreen()),

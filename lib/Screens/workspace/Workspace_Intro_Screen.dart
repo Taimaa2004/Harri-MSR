@@ -5,10 +5,10 @@ class WorkspaceIntroPage extends StatelessWidget {
   final TextEditingController workspaceSummaryController;
 
   const WorkspaceIntroPage({
-    Key? key,
+    super.key,
     required this.companyNameController,
     required this.workspaceSummaryController,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
