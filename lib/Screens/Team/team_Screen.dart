@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:graduation_project/Screens/Team/add_Member_Screen.dart';
 
 class Teamscreen extends StatefulWidget {
@@ -14,15 +14,34 @@ class _TeamscreenState extends State<Teamscreen> {
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
   final FirebaseAuth auth = FirebaseAuth.instance;
 
+  String? userRole;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentUserRole();
+  }
+
+  Future<void> _fetchCurrentUserRole() async {
+    String uid = auth.currentUser!.uid;
+    DocumentSnapshot userDoc = await firestore.collection('team').doc(uid).get();
+
+    if (userDoc.exists) {
+      setState(() {
+        userRole = userDoc.get('role') ?? 'member';
+      });
+    } else {
+      setState(() {
+        userRole = 'member';
+      });
+    }
+  }
+
   Stream<List<Map<String, dynamic>>> _getTeamMembersStream() {
     String currentUserUid = auth.currentUser!.uid;
     return firestore.collection('team').snapshots().map((snapshot) {
-      return snapshot.docs.where((doc) {
-        doc.data();
-        return doc.id != currentUserUid;
-      }).map((doc) {
+      return snapshot.docs.where((doc) => doc.id != currentUserUid).map((doc) {
         var data = doc.data();
-
         return {
           'firstName': data['first_name'] ?? 'No First Name',
           'lastName': data['last_name'] ?? 'No Last Name',
@@ -85,10 +104,14 @@ class _TeamscreenState extends State<Teamscreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Team Members",
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+        title: Text(
+          "Team Members",
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+        ),
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
+      body: userRole == null
+          ? Center(child: CircularProgressIndicator())
+          : StreamBuilder<List<Map<String, dynamic>>>(
         stream: _getTeamMembersStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -102,6 +125,7 @@ class _TeamscreenState extends State<Teamscreen> {
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return Center(child: Text('No team members found.'));
           }
+
           return ListView.builder(
             itemCount: snapshot.data!.length,
             itemBuilder: (context, index) {
@@ -119,18 +143,18 @@ class _TeamscreenState extends State<Teamscreen> {
                   ),
                   title: Text(
                     '${member['firstName']} ${member['lastName']}',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  onTap: () {
-                    showProfileScreen(context, member);
-                  },
+                  onTap: () => showProfileScreen(context, member),
                 ),
               );
             },
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: userRole == 'Admin'
+          ? FloatingActionButton(
         onPressed: () {
           Navigator.push(
             context,
@@ -139,7 +163,8 @@ class _TeamscreenState extends State<Teamscreen> {
         },
         backgroundColor: Colors.blueAccent,
         child: Icon(Icons.add, size: 30, color: Colors.white),
-      ),
+      )
+          : null,
     );
   }
 }
