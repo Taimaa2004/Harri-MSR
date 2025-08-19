@@ -7,7 +7,8 @@ import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'Book Meeting/Calendar_Booking_Screen.dart';
 import 'package:toggle_switch/toggle_switch.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'EditMeetingScreen.dart';
 
 class MeetingListPage extends StatefulWidget {
@@ -26,17 +27,64 @@ class _MeetingListPageState extends State<MeetingListPage> {
   List<Appointment> meetings = [];
   StreamSubscription<QuerySnapshot>? _meetingSub;
 
+
+  late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
+
   @override
   void initState() {
     super.initState();
     fetchMeetings();
+
+    flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    const AndroidInitializationSettings androidSettings =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initSettings =
+    InitializationSettings(android: androidSettings);
+    flutterLocalNotificationsPlugin.initialize(initSettings);
+
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (message.notification != null) {
+        flutterLocalNotificationsPlugin.show(
+          message.hashCode,
+          message.notification!.title,
+          message.notification!.body,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'meeting_channel',
+              'Meetings',
+              channelDescription: 'Notifications for meetings',
+              importance: Importance.max,
+              priority: Priority.high,
+            ),
+          ),
+        );
+      }
+    });
   }
+
 
   @override
   void dispose() {
     _meetingSub?.cancel();
     super.dispose();
   }
+  Future<void> sendLocalNotification(String title, String body) async {
+    await flutterLocalNotificationsPlugin.show(
+      title.hashCode,
+      title,
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'meeting_channel',
+          'Meetings',
+          channelDescription: 'Notifications for meetings',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  }
+
 
   void fetchMeetings() {
     _meetingSub = firestore
@@ -46,19 +94,26 @@ class _MeetingListPageState extends State<MeetingListPage> {
         .listen((snapshot) {
       List<Appointment> fetchedMeetings = [];
 
-      for (var doc in snapshot.docs) {
-        var data = doc.data() as Map<String, dynamic>;
+      // Handle added/modified/removed documents
+      for (var change in snapshot.docChanges) {
+        var data = change.doc.data() as Map<String, dynamic>;
         DateTime? startTime = (data['start_time'] as Timestamp?)?.toDate();
         DateTime? endTime = (data['end_time'] as Timestamp?)?.toDate();
         String meetingName = data['title'] ?? 'Untitled Meeting';
 
-        if (startTime != null && endTime != null) {
+        if (change.type == DocumentChangeType.removed) {
+          // Notify users about deletion
+          sendLocalNotification(
+              'Meeting Cancelled', 'The meeting "$meetingName" was deleted.');
+        }
+
+        if (startTime != null && endTime != null && change.type != DocumentChangeType.removed) {
           fetchedMeetings.add(Appointment(
             startTime: startTime,
             endTime: endTime,
             subject: meetingName,
             color: Colors.blueAccent,
-            id: doc.id,
+            id: change.doc.id,
           ));
         }
       }
@@ -66,8 +121,6 @@ class _MeetingListPageState extends State<MeetingListPage> {
       setState(() {
         meetings = fetchedMeetings;
       });
-    }, onError: (err) {
-      print('Error listening to Meetings: $err');
     });
   }
 
@@ -104,72 +157,63 @@ class _MeetingListPageState extends State<MeetingListPage> {
 
   Future<void> deleteMeeting(String meetingId) async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (meetingId.isEmpty) {
-      _showSnack('Invalid meeting id');
-      return;
-    }
+    if (meetingId.isEmpty) return;
 
     try {
       final docRef = firestore.collection('Meetings').doc(meetingId);
       final docSnap = await docRef.get();
 
-      if (!docSnap.exists) {
-        _showSnack('Meeting no longer exists.');
-        return;
-      }
+      if (!docSnap.exists) return;
 
       final data = docSnap.data() as Map<String, dynamic>;
-      final String? creatorId = data['creatorId'];
       final String meetingTitle = data['title'] ?? "Untitled Meeting";
 
-      // Check creator
-      if (creatorId != null && currentUser != null && creatorId != currentUser.uid) {
-        _showSnack('Only the meeting creator can delete this meeting.');
-        return;
-      }
-
-      // 1️⃣ Notify all subscribed users except the deleter
+      // Notify all users subscribed
       final notifyUsersSnap = await docRef.collection('notifyUsers').get();
       for (var userDoc in notifyUsersSnap.docs) {
         final userId = userDoc['userId'];
         if (userId != currentUser?.uid) {
+          // Add Firestore notification
           await firestore.collection('notifications').add({
             'userId': userId,
             'title': 'Meeting Cancelled',
             'body': 'The meeting "$meetingTitle" has been cancelled.',
             'senderName': currentUser?.displayName ?? 'System',
-            'isRead': false,
             'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
           });
+
+          // Send local notification
+          await flutterLocalNotificationsPlugin.show(
+            userDoc.hashCode,
+            'Meeting Cancelled',
+            'The meeting "$meetingTitle" has been cancelled.',
+            const NotificationDetails(
+              android: AndroidNotificationDetails(
+                'meeting_channel',
+                'Meetings',
+                channelDescription: 'Notifications for meetings',
+                importance: Importance.max,
+                priority: Priority.high,
+              ),
+            ),
+          );
+
+          // Optional: Send FCM message to device tokens here
+          // You need to store each user's FCM token in Firestore
         }
       }
 
-      // 2️⃣ Notify creator that they deleted their own meeting
-      await firestore.collection('notifications').add({
-        'userId': currentUser!.uid,
-        'title': 'Meeting Deleted',
-        'body': 'You deleted your meeting "$meetingTitle".',
-        'senderName': currentUser.displayName ?? 'System',
-        'isRead': false,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      // 3️⃣ Delete the meeting document
+      // Delete meeting
       await docRef.delete();
-
-      _showSnack('Meeting deleted and notifications sent.');
     } catch (e) {
       print('Error deleting meeting: $e');
-      _showSnack('Delete failed: $e');
     }
   }
 
   Future<void> subscribeNotifyMe(String meetingId) async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      _showSnack('You must be signed in to subscribe.');
-      return;
-    }
+    if (currentUser == null) return;
 
     final subDoc = firestore
         .collection('Meetings')
@@ -177,20 +221,25 @@ class _MeetingListPageState extends State<MeetingListPage> {
         .collection('notifyUsers')
         .doc(currentUser.uid);
 
-    try {
-      final exists = (await subDoc.get()).exists;
-      if (!exists) {
-        await subDoc.set({
-          'userId': currentUser.uid,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-        _showSnack('You will be notified if the meeting is canceled.');
-      } else {
-        _showSnack('Already subscribed to notifications.');
-      }
-    } catch (e) {
-      print('Error subscribing to notifyUsers: $e');
-      _showSnack('Failed to subscribe: $e');
+    final exists = (await subDoc.get()).exists;
+    if (!exists) {
+      await subDoc.set({'userId': currentUser.uid, 'timestamp': FieldValue.serverTimestamp()});
+
+      // Show local notification
+      await flutterLocalNotificationsPlugin.show(
+        currentUser.uid.hashCode,
+        'Subscribed',
+        'You will be notified if the meeting is cancelled.',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'meeting_channel',
+            'Meetings',
+            channelDescription: 'Notifications for meetings',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+        ),
+      );
     }
   }
 

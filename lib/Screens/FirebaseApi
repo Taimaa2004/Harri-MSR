@@ -1,0 +1,25 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+class FirebaseApi {
+  final _firebaseMessaging = FirebaseMessaging.instance;
+
+  Future<void> initNotifications() async {
+    // Ask permission (iOS)
+    await _firebaseMessaging.requestPermission();
+
+    // Get token (optional: useful for debugging)
+    String? token = await _firebaseMessaging.getToken();
+    print("📱 FCM Token: $token");
+
+    // 👇 Foreground messages listener
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print("📩 Foreground message: ${message.notification?.title}");
+      print("📩 Body: ${message.notification?.body}");
+    });
+
+    // When user taps notification and opens app
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print("📩 Notification caused app to open: ${message.notification?.title}");
+    });
+  }
+}

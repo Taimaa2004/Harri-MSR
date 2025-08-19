@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../../../main.dart' show flutterLocalNotificationsPlugin;
+
+import '../../../main.dart';
 
 class BookMeetingScreen extends StatefulWidget {
   final DateTime selectedTime;
@@ -35,12 +40,22 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
     5: 'Fri', 6: 'Sat', 7: 'Sun',
   };
   List<int> selectedWeekDays = [];
+  late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
 
   @override
   void initState() {
     super.initState();
     selectedStartTime = widget.selectedTime;
     selectedEndTime = widget.selectedTime.add(const Duration(hours: 1));
+
+    // Initialize notifications
+    flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    const AndroidInitializationSettings androidSettings =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initSettings =
+    InitializationSettings(android: androidSettings);
+
+    flutterLocalNotificationsPlugin.initialize(initSettings);
   }
 
   @override
@@ -121,6 +136,7 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         return;
       }
 
+      // ✅ Save meeting in Firestore (lowercase "meetings")
       await firestore.collection('Meetings').add({
         'title': titleController.text.trim(),
         'notes': notesController.text.trim().isEmpty ? null : notesController.text.trim(),
@@ -131,12 +147,13 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         'creatorId': currentUser!.uid,
       });
 
-
+      // ✅ Optional: Add in-app notification docs
       for (String userId in selectedMemberIds) {
         final message = userId == currentUser?.uid
             ? 'You created a meeting: "${titleController.text.trim()}" at ${startDate.toLocal().toString().substring(0, 16)}'
             : 'You have been invited to: "${titleController.text.trim()}"';
 
+        // Add Firestore notification
         await firestore.collection('notifications').add({
           'userId': userId,
           'title': titleController.text.trim(),
@@ -147,6 +164,22 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
           'timestamp': Timestamp.now(),
           'isRead': false,
         });
+
+        // Show push notification locally
+        await flutterLocalNotificationsPlugin.show(
+          0,
+          titleController.text.trim(),
+          message,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'meeting_channel',
+              'Meetings',
+              channelDescription: 'Notifications for new meetings',
+              importance: Importance.max,
+              priority: Priority.high,
+            ),
+          ),
+        );
       }
     }
 

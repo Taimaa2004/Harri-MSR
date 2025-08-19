@@ -270,7 +270,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              const Text("Most 5 Booked Rooms",
+            const Text("Most 5 Booked Rooms",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 17),
             _buildMostBookedRoomsChart(),

@@ -8,7 +8,7 @@ class BookingScreen extends StatefulWidget {
 
   const BookingScreen({
     super.key,
-    required this.roomId,
+    required this.roomId, required String meetingTitle,
   });
 
   @override
@@ -262,11 +262,10 @@ class _BookingScreenState extends State<BookingScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  const SizedBox(height: 12),
-
                   // --- Room Info ---
                   Text(roomName ?? 'Loading...', style: theme.textTheme.titleLarge!.copyWith(color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Icon(Icons.group, color: Colors.blue.shade700),
@@ -283,9 +282,6 @@ class _BookingScreenState extends State<BookingScreen> {
                   const SizedBox(height: 6),
                   buildEquipmentChips(),
                   const Divider(height: 32, thickness: 1, color: Colors.blueGrey),
-
-                  // --- Start/End Time Cards ---
-                  // --- Meeting Title Field ---
                   TextField(
                     controller: titleController,
                     decoration: InputDecoration(
@@ -294,8 +290,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
-                  const SizedBox(height: 10),
-
+                  const SizedBox(height: 17),
                   Card(
                     elevation: 3,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -464,9 +459,10 @@ class _BookingScreenState extends State<BookingScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 5,
                       shadowColor: Colors.blue.shade200,
+                      foregroundColor: Colors.white,
                     ),
                     onPressed: saveMeeting,
-                    child: const Text("Book Meeting", style: TextStyle(fontSize: 18)),
+                    child: const Text("Book Meeting", style: TextStyle(fontSize: 20)),
                   ),
                 ],
               ),

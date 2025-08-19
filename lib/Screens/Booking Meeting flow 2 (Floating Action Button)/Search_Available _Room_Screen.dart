@@ -238,7 +238,7 @@ class _AddMeeting1State extends State<AddMeeting1> {
               context,
               MaterialPageRoute(
                 builder: (context) => BookingScreen(
-                  roomId: roomId,
+                  roomId: roomId, meetingTitle: '',
                 ),
               ),
             ),
