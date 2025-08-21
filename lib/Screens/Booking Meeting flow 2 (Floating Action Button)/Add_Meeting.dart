@@ -1,107 +1,180 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-class BookingScreen extends StatefulWidget {
+import '../../../main.dart' show flutterLocalNotificationsPlugin, navigatorKey;
+import '../DashBoard/notification_screen.dart';
+
+class BookMeetingScreen extends StatefulWidget {
+  final DateTime selectedTime;
   final String roomId;
 
-  const BookingScreen({
+  const BookMeetingScreen({
     super.key,
-    required this.roomId, required String meetingTitle,
+    required this.selectedTime,
+    required this.roomId,
   });
 
   @override
-  State<BookingScreen> createState() => _BookingScreenState();
+  _BookMeetingScreenState createState() => _BookMeetingScreenState();
 }
 
-class _BookingScreenState extends State<BookingScreen> {
-  DateTime selectedStartTime = DateTime.now();
-  DateTime selectedEndTime = DateTime.now().add(const Duration(hours: 1));
-  List<String> selectedMemberIds = [];
-  bool loading = true;
-  String memberSearch = '';
+class _BookMeetingScreenState extends State<BookMeetingScreen> {
+  TextEditingController titleController = TextEditingController();
   TextEditingController notesController = TextEditingController();
-  TextEditingController titleController = TextEditingController(); // Meeting title controller
 
-  String? roomName;
-  int? capacity;
-  String? location, status;
-  List<String>? equipment;
-  String bookingSummary = '';
+  late DateTime selectedStartTime;
+  late DateTime selectedEndTime;
+  List<String> selectedMemberIds = [];
+  String searchQuery = '';
+  bool _membersExpanded = false;
 
   String recurrenceType = 'None';
   final List<String> recurrenceOptions = ['None', 'Daily', 'Weekly', 'Monthly'];
   DateTime? repeatUntil;
+
   final Map<int, String> weekDayLabels = {
-    1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'
+    1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu',
+    5: 'Fri', 6: 'Sat', 7: 'Sun',
   };
   List<int> selectedWeekDays = [];
+
+  late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
 
   @override
   void initState() {
     super.initState();
-    fetchRoomDetails();
+    selectedStartTime = widget.selectedTime;
+    selectedEndTime = widget.selectedTime.add(const Duration(hours: 1));
+
+    flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    const AndroidInitializationSettings androidSettings =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initSettings =
+    InitializationSettings(android: androidSettings);
+
+    flutterLocalNotificationsPlugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (response.payload != null && navigatorKey.currentContext != null) {
+          Navigator.push(
+            navigatorKey.currentContext!,
+            MaterialPageRoute(builder: (_) => const NotificationPage()),
+          );
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
-    notesController.dispose();
     titleController.dispose();
+    notesController.dispose();
     super.dispose();
   }
 
-  Future<void> fetchRoomDetails() async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('meeting_rooms')
-          .doc(widget.roomId)
-          .get();
-      if (snap.exists) {
-        final room = snap.data()!;
-        setState(() {
-          roomName = room['name'] ?? "Unnamed Room";
-          capacity = room['capacity'];
-          equipment = List<String>.from(room['equipments'] ?? []);
-          location = room['location'];
-          status = room['room_status'];
-          loading = false;
-        });
-      } else {
-        setState(() {
-          roomName = "Unknown Room";
-          capacity = 0;
-          equipment = [];
-          location = "N/A";
-          status = "N/A";
-          loading = false;
-        });
-      }
-    } catch (_) {
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: Colors.blue.shade500),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.9),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
+      ),
+    );
+  }
+
+  void selectTime(BuildContext context, bool isStart) async {
+    TimeOfDay initial = TimeOfDay.fromDateTime(isStart ? selectedStartTime : selectedEndTime);
+    TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: initial);
+
+    if (pickedTime != null && mounted) {
+      DateTime base = isStart ? selectedStartTime : selectedEndTime;
+      DateTime updated = DateTime(base.year, base.month, base.day, pickedTime.hour, pickedTime.minute);
+
       setState(() {
-        roomName = "Error loading room";
-        capacity = 0;
-        equipment = [];
-        location = "Error";
-        status = "Error";
-        loading = false;
+        if (isStart) {
+          selectedStartTime = updated;
+          if (!selectedEndTime.isAfter(updated)) {
+            selectedEndTime = updated.add(const Duration(hours: 1));
+          }
+        } else {
+          selectedEndTime = updated;
+        }
       });
     }
   }
 
+  Future<bool> _isOverlapping(DateTime startDate, DateTime endDate) async {
+    QuerySnapshot existingMeetings = await FirebaseFirestore.instance
+        .collection('Meetings')
+        .where('room_id', isEqualTo: widget.roomId)
+        .get();
+
+    return existingMeetings.docs.any((doc) {
+      var data = doc.data() as Map<String, dynamic>;
+      DateTime existingStart = (data['start_time'] as Timestamp).toDate();
+      DateTime existingEnd = (data['end_time'] as Timestamp).toDate();
+      return startDate.isBefore(existingEnd) && endDate.isAfter(existingStart);
+    });
+  }
+
+  List<DateTime> _generateRecurrenceDates() {
+    List<DateTime> startDates = [];
+
+    if (recurrenceType == 'None') {
+      startDates.add(selectedStartTime);
+    } else if (recurrenceType == 'Daily' && repeatUntil != null) {
+      DateTime current = selectedStartTime;
+      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
+        startDates.add(current);
+        current = current.add(const Duration(days: 1));
+      }
+    } else if (recurrenceType == 'Weekly' && repeatUntil != null) {
+      DateTime current = selectedStartTime;
+      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
+        if (selectedWeekDays.contains(current.weekday)) {
+          startDates.add(DateTime(
+              current.year, current.month, current.day, selectedStartTime.hour, selectedStartTime.minute));
+        }
+        current = current.add(const Duration(days: 1));
+      }
+    } else if (recurrenceType == 'Monthly' && repeatUntil != null) {
+      DateTime current = selectedStartTime;
+      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
+        startDates.add(current);
+        current = DateTime(current.year, current.month + 1, current.day, current.hour, current.minute);
+      }
+    }
+
+    return startDates..sort();
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   Future<List<Map<String, dynamic>>> getTeamMembers() async {
     try {
-      final snap = await FirebaseFirestore.instance.collection('team').get();
-      return snap.docs.map((doc) {
-        final data = doc.data();
+      QuerySnapshot snapshot = await FirebaseFirestore.instance.collection('team').get();
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
         return {
           'id': doc.id,
-          'first_name': data['first_name'] ?? '',
-          'last_name': data['last_name'] ?? '',
+          'first_name': data['first_name'] ?? 'No Name',
+          'last_name': data['last_name'] ?? 'No Name',
           'email': data['email'] ?? '',
         };
       }).toList();
-    } catch (_) {
+    } catch (e) {
+      print("🔥 Error fetching team members: $e");
       return [];
     }
   }
@@ -109,239 +182,190 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> saveMeeting() async {
     final firestore = FirebaseFirestore.instance;
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return showMessage("No user logged in.");
 
-    final meetingTitle = titleController.text.trim();
-    if (meetingTitle.isEmpty) return showMessage("Please enter a meeting title.");
-
-    if (!selectedMemberIds.contains(currentUser.uid)) selectedMemberIds.add(currentUser.uid);
-
-    List<DateTime> dates = [];
-    if (recurrenceType == 'None') {
-      dates.add(selectedStartTime);
-    } else if (repeatUntil != null) {
-      DateTime cur = selectedStartTime;
-      while (!cur.isAfter(repeatUntil!)) {
-        if (recurrenceType == 'Daily' ||
-            (recurrenceType == 'Weekly' && selectedWeekDays.contains(cur.weekday)) ||
-            recurrenceType == 'Monthly') {
-          dates.add(cur);
-        }
-        cur = recurrenceType == 'Monthly'
-            ? DateTime(cur.year, cur.month + 1, cur.day)
-            : cur.add(Duration(days: recurrenceType == 'Weekly' ? 1 : 1));
-      }
+    if (titleController.text.trim().isEmpty) {
+      _showSnack("Meeting title cannot be empty.");
+      return;
     }
 
-    for (final startDate in dates) {
+    if (recurrenceType == 'Weekly' && selectedWeekDays.isEmpty) {
+      _showSnack("Please select at least one weekday.");
+      return;
+    }
+
+    if (recurrenceType != 'None' && repeatUntil == null) {
+      _showSnack("Please select a repeat end date.");
+      return;
+    }
+
+    if (currentUser != null && !selectedMemberIds.contains(currentUser.uid)) {
+      selectedMemberIds.add(currentUser.uid);
+    }
+
+    List<DateTime> startDates = _generateRecurrenceDates();
+
+    for (final startDate in startDates) {
       final endDate = startDate.add(selectedEndTime.difference(selectedStartTime));
-      final overlapSnap = await firestore
-          .collection('Meetings')
-          .where('room_id', isEqualTo: widget.roomId)
-          .get();
 
-      final conflict = overlapSnap.docs.any((doc) {
-        final data = doc.data();
-        final mStart = (data['start_time'] as Timestamp).toDate();
-        final mEnd = (data['end_time'] as Timestamp).toDate();
-        return startDate.isBefore(mEnd) && endDate.isAfter(mStart);
-      });
-      if (conflict) return showMessage("Time conflict! Try another time.");
+      if (await _isOverlapping(startDate, endDate)) {
+        _showSnack("Meeting time overlaps with another meeting!");
+        return;
+      }
 
-      await firestore.collection('Meetings').add({
-        'room_id': widget.roomId,
+      final meetingDoc = await firestore.collection('Meetings').add({
+        'title': titleController.text.trim(),
+        'notes': notesController.text.trim().isEmpty ? null : notesController.text.trim(),
         'start_time': Timestamp.fromDate(startDate),
         'end_time': Timestamp.fromDate(endDate),
-        'title': meetingTitle,
+        'room_id': widget.roomId,
         'users': selectedMemberIds,
-        'notes': notesController.text.trim(),
+        'creatorId': currentUser!.uid,
       });
 
-      for (final userId in selectedMemberIds) {
-        try {
-          final msg = userId == currentUser.uid
-              ? 'You created "$meetingTitle" at ${DateFormat('yyyy-MM-dd HH:mm').format(startDate)}'
-              : 'You have been invited to "$meetingTitle"';
-          await firestore.collection('notifications').add({
-            'userId': userId,
-            'title': meetingTitle,
-            'body': msg,
-            'senderName': currentUser.email ?? 'Unknown',
-            'timestamp': Timestamp.now(),
-            'isRead': false,
-          });
-        } catch (_) {}
+      // Notifications
+      for (String userId in selectedMemberIds) {
+        final message = userId == currentUser.uid
+            ? 'You created a meeting: "${titleController.text.trim()}" at ${startDate.toLocal().toString().substring(0, 16)}'
+            : 'You have been invited to: "${titleController.text.trim()}"';
+
+        final notifRef = await firestore.collection('notifications').add({
+          'userId': userId,
+          'title': titleController.text.trim(),
+          'body': message,
+          'senderName': currentUser.email ?? 'Unknown',
+          'timestamp': Timestamp.now(),
+          'isRead': false,
+          'meetingId': meetingDoc.id,
+          'recurrenceId': recurrenceType != 'None' ? meetingDoc.id : null,
+          'recurrenceType': recurrenceType != 'None' ? recurrenceType : null,
+        });
+
+        // Save docId for later updates
+        await notifRef.update({'docId': notifRef.id});
+
+        await flutterLocalNotificationsPlugin.show(
+          0,
+          titleController.text.trim(),
+          message,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'meeting_channel',
+              'Meetings',
+              channelDescription: 'Notifications for new meetings',
+              importance: Importance.max,
+              priority: Priority.high,
+            ),
+          ),
+          payload: meetingDoc.id,
+        );
       }
     }
 
-    setState(() {
-      bookingSummary =
-      'Room: $roomName\nDate: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedStartTime)}\nTitle: $meetingTitle\nMembers: ${selectedMemberIds.length}\nNotes: ${notesController.text.trim()}';
-    });
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        content: const Text("Meeting(s) booked successfully!"),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void showMessage(String msg) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        content: Text(msg),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('OK'))
-        ],
-      ),
-    );
-  }
-
-  Widget buildEquipmentChips() {
-    if (equipment == null || equipment!.isEmpty) {
-      return const Text("No equipment available",
-          style: TextStyle(fontStyle: FontStyle.italic));
-    }
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: equipment!.map((eq) {
-        return Chip(
-          label: Text(eq),
-          backgroundColor: Colors.blue.shade50,
-          labelStyle: TextStyle(
-              color: Colors.blue.shade900, fontWeight: FontWeight.w600),
-          avatar: const Icon(Icons.settings, size: 18, color: Colors.blueAccent),
-        );
-      }).toList(),
-    );
+    _showSnack("Meeting saved successfully!");
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: Colors.blue.shade50,
       appBar: AppBar(
-        title: const Text("Book Meeting"),
-        backgroundColor: Colors.blue.shade700,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF4A90E2), Color(0xFF007AFF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        title: const Text("Book Meeting", style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : FutureBuilder<List<Map<String, dynamic>>>(
+      body: FutureBuilder(
         future: getTeamMembers(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final team = snapshot.data!;
-          final filtered = team.where((member) {
-            final name = '${member['first_name']} ${member['last_name']}'.toLowerCase();
-            final email = member['email'].toLowerCase();
-            final q = memberSearch.toLowerCase();
-            return name.contains(q) || email.contains(q);
-          }).toList();
+          var teamMembers = snapshot.data as List<Map<String, dynamic>>;
 
-          return Padding(
+          return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.blue.shade100, blurRadius: 16)],
-              ),
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  // --- Room Info ---
-                  Text(roomName ?? 'Loading...', style: theme.textTheme.titleLarge!.copyWith(color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(Icons.group, color: Colors.blue.shade700),
-                      const SizedBox(width: 6),
-                      Text('Capacity: ${capacity ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w500)),
-                      const SizedBox(width: 20),
-                      Icon(Icons.location_on, color: Colors.blue.shade700),
-                      const SizedBox(width: 6),
-                      Flexible(child: Text(location ?? '-', overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
+            child: Column(
+              children: [
+                _buildCard([
+                  TextField(controller: titleController, decoration: _inputDecoration("Meeting Title", Icons.title)),
                   const SizedBox(height: 12),
-                  Text('Equipment:', style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  buildEquipmentChips(),
-                  const Divider(height: 32, thickness: 1, color: Colors.blueGrey),
-                  TextField(
-                    controller: titleController,
-                    decoration: InputDecoration(
-                      labelText: 'Meeting Title',
-                      prefixIcon: const Icon(Icons.title),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                  const SizedBox(height: 17),
-                  Card(
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: ListTile(
-                      leading: const Icon(Icons.schedule, color: Colors.blue),
-                      title: Text('Start Time', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(DateFormat('EEE, MMM d, yyyy • HH:mm').format(selectedStartTime)),
-                      trailing: const Icon(Icons.lock, color: Colors.grey),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
+                ]),
+                const SizedBox(height: 16),
 
-                  Card(
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: ListTile(
-                      leading: const Icon(Icons.schedule, color: Colors.blue),
-                      title: Text('End Time', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(DateFormat('EEE, MMM d, yyyy • HH:mm').format(selectedEndTime)),
-                      trailing: const Icon(Icons.access_time, color: Colors.blue),
-                      onTap: () async {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.fromDateTime(selectedEndTime),
-                        );
-                        if (time != null) {
-                          setState(() {
-                            selectedEndTime = DateTime(
-                              selectedEndTime.year,
-                              selectedEndTime.month,
-                              selectedEndTime.day,
-                              time.hour,
-                              time.minute,
-                            );
-                          });
-                        }
-                      },
-                    ),
+                _buildCard([
+                  ListTile(
+                    leading: const Icon(Icons.access_time, color: Colors.blue),
+                    title: Text("Start Time: ${TimeOfDay.fromDateTime(selectedStartTime).format(context)}"),
+                    onTap: () => selectTime(context, true),
                   ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.timelapse, color: Colors.blue),
+                    title: Text("End Time: ${TimeOfDay.fromDateTime(selectedEndTime).format(context)}"),
+                    onTap: () => selectTime(context, false),
+                  ),
+                ]),
+                const SizedBox(height: 16),
 
-                  const SizedBox(height: 15),
+                _buildCard([
+                  ListTile(
+                    leading: const Icon(Icons.group, color: Colors.blue),
+                    title: const Text("Select Members"),
+                    trailing: Icon(_membersExpanded ? Icons.expand_less : Icons.expand_more),
+                    onTap: () => setState(() => _membersExpanded = !_membersExpanded),
+                  ),
+                  if (_membersExpanded) ...[
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: TextField(
+                        decoration: _inputDecoration("Search members...", Icons.search),
+                        onChanged: (value) => setState(() => searchQuery = value.toLowerCase()),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 200,
+                      child: ListView(
+                        children: teamMembers
+                            .where((member) =>
+                        member['first_name'].toLowerCase().contains(searchQuery) ||
+                            member['last_name'].toLowerCase().contains(searchQuery))
+                            .map((member) {
+                          final fullName = '${member['first_name']} ${member['last_name']}';
+                          return CheckboxListTile(
+                            title: Text(fullName),
+                            subtitle: Text(member['email']),
+                            value: selectedMemberIds.contains(member['id']),
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true) {
+                                  selectedMemberIds.add(member['id']);
+                                } else {
+                                  selectedMemberIds.remove(member['id']);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ]),
+                const SizedBox(height: 16),
 
-                  // --- Recurrence Dropdown ---
+                _buildCard([
                   DropdownButtonFormField<String>(
                     value: recurrenceType,
-                    decoration: const InputDecoration(
-                      labelText: "Recurrence",
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.repeat, color: Colors.blue),
-                    ),
-                    items: recurrenceOptions.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                    decoration: _inputDecoration("Recurrence", Icons.repeat),
+                    items: recurrenceOptions
+                        .map((option) => DropdownMenuItem<String>(value: option, child: Text(option)))
+                        .toList(),
                     onChanged: (val) {
                       setState(() {
                         recurrenceType = val!;
@@ -349,126 +373,89 @@ class _BookingScreenState extends State<BookingScreen> {
                       });
                     },
                   ),
-
-                  if (recurrenceType == 'Weekly')
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Wrap(
-                        spacing: 8,
-                        children: weekDayLabels.entries.map((e) {
-                          return FilterChip(
-                            label: Text(e.value),
-                            selected: selectedWeekDays.contains(e.key),
-                            onSelected: (val) {
-                              setState(() {
-                                val ? selectedWeekDays.add(e.key) : selectedWeekDays.remove(e.key);
-                              });
-                            },
-                            backgroundColor: Colors.blue.shade50,
-                            selectedColor: Colors.blue.shade300,
-                            labelStyle: TextStyle(color: Colors.blue.shade900),
-                          );
-                        }).toList(),
-                      ),
+                  if (recurrenceType == 'Weekly') ...[
+                    const SizedBox(height: 8),
+                    const Text("Select Weekdays:"),
+                    Wrap(
+                      spacing: 8.0,
+                      children: weekDayLabels.entries.map((entry) {
+                        final day = entry.key;
+                        final label = entry.value;
+                        final isSelected = selectedWeekDays.contains(day);
+                        return FilterChip(
+                          label: Text(label),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) selectedWeekDays.add(day);
+                              else selectedWeekDays.remove(day);
+                            });
+                          },
+                        );
+                      }).toList(),
                     ),
-
+                  ],
                   if (recurrenceType != 'None')
                     ListTile(
                       leading: const Icon(Icons.calendar_today, color: Colors.blue),
-                      title: Text(repeatUntil == null
-                          ? 'Repeat Until...'
-                          : 'Repeat Until: ${DateFormat('yyyy-MM-dd').format(repeatUntil!)}'),
+                      title: Text(repeatUntil != null
+                          ? 'Repeat Until: ${repeatUntil!.toLocal().toString().split(' ')[0]}'
+                          : 'Select End Date'),
                       onTap: () async {
-                        final date = await showDatePicker(
+                        DateTime? picked = await showDatePicker(
                           context: context,
                           initialDate: selectedStartTime,
-                          firstDate: DateTime.now(),
+                          firstDate: selectedStartTime,
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                         );
-                        if (date != null) setState(() => repeatUntil = date);
+                        if (picked != null) setState(() => repeatUntil = picked);
                       },
                     ),
+                ]),
+                const SizedBox(height: 24),
 
-
-                  // --- Members Selection ---
-                  ExpansionTile(
-                    title: Text(
-                      "Select Members (${selectedMemberIds.length})",
-                      style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.w600),
-                    ),
-                    childrenPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: [
-                      TextField(
-                        decoration: InputDecoration(
-                          labelText: 'Search Members',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onChanged: (val) => setState(() => memberSearch = val),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        height: 250,
-                        child: filtered.isEmpty
-                            ? const Center(child: Text("No members found"))
-                            : ListView.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (context, i) {
-                            final member = filtered[i];
-                            final fullName = '${member['first_name']} ${member['last_name']}';
-                            return CheckboxListTile(
-                              title: Text(fullName),
-                              subtitle: Text(member['email']),
-                              value: selectedMemberIds.contains(member['id']),
-                              onChanged: (val) {
-                                setState(() {
-                                  if (val == true) {
-                                    selectedMemberIds.add(member['id']);
-                                  } else {
-                                    selectedMemberIds.remove(member['id']);
-                                  }
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 32, thickness: 1, color: Colors.blueGrey),
-
-
-                  // --- Notes Field ---
+                _buildCard([
                   TextField(
                     controller: notesController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: 'Optional Notes',
-                      prefixIcon: const Icon(Icons.note),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
+                    decoration: _inputDecoration("Notes (optional)", Icons.note_alt),
+                    maxLines: 4,
+                    minLines: 3,
+                    style: const TextStyle(fontSize: 15),
                   ),
+                ]),
 
-                  const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-                  // --- Book Button ---
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade700,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 5,
-                      shadowColor: Colors.blue.shade200,
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: saveMeeting,
-                    child: const Text("Book Meeting", style: TextStyle(fontSize: 20)),
-                  ),
-                ],
-              ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.save),
+                  style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      backgroundColor: Colors.blue.shade600,
+                      foregroundColor: Colors.white),
+                  onPressed: saveMeeting,
+                  label: const Text("Save Meeting",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildCard(List<Widget> children) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 4,
+      shadowColor: Colors.blue.withOpacity(0.2),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
       ),
     );
   }

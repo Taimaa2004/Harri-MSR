@@ -24,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String userRole = "";
   List<QueryDocumentSnapshot> meetingDocuments = [];
   List<QueryDocumentSnapshot> roomDocuments = [];
+  DateTime? _activeFilterDate; // null = show today + upcoming
 
   @override
   void initState() {
@@ -32,6 +33,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     capitalizeUserName();
     fetchUserRole();
     listenToNotificationCount();
+  }
+
+  // ---------- Helpers ----------
+  bool _isRecurring(Map<String, dynamic> data) {
+    try {
+      // Support multiple possible schemas
+      final recurringId = (data['recurring_id'] ??
+          data['recurrence_id'] ??
+          data['series_id'] ??
+          '')
+          .toString();
+
+      final boolFlags = (data['is_recurring'] == true) ||
+          (data['isRecurring'] == true) ||
+          (data['recurring'] == true) ||
+          (data['repeat'] == true);
+
+      final hasRuleLike =
+          data['recurrence'] != null || data['rrule'] != null || data['rule'] != null;
+
+      final result =
+          boolFlags || hasRuleLike || (recurringId.isNotEmpty && recurringId != 'null');
+
+      return result;
+    } catch (_) {
+      return false;
+    }
   }
 
   int unreadNotificationCount = 0;
@@ -52,45 +80,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-
   void fetchMeetings() async {
     try {
       User? user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        QuerySnapshot meetingSnapshot = await FirebaseFirestore.instance
+        final meetingSnapshot = await FirebaseFirestore.instance
             .collection('Meetings')
             .where('users', arrayContains: user.uid)
             .orderBy('start_time')
             .get();
 
-        final seenRecurringIds = <String>{};
-        final List<QueryDocumentSnapshot> filteredMeetings = [];
-
-        for (final doc in meetingSnapshot.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-
-          if (data.containsKey('recurring_id')) {
-            final recurringId = data['recurring_id'];
-
-            if (!seenRecurringIds.contains(recurringId)) {
-              filteredMeetings.add(doc);
-              seenRecurringIds.add(recurringId);
-            }
-          } else {
-            // Single (non-recurring) meeting
-            filteredMeetings.add(doc);
-          }
-        }
-
-        QuerySnapshot roomSnapshot =
+        final roomSnapshot =
         await FirebaseFirestore.instance.collection('meeting_rooms').get();
 
         setState(() {
-          meetingDocuments = filteredMeetings;
+          meetingDocuments = meetingSnapshot.docs;
           roomDocuments = roomSnapshot.docs;
         });
+
+        // Debug counts (optional)
+        int recurringCount = 0;
+        for (final d in meetingSnapshot.docs) {
+          final m = d.data() as Map<String, dynamic>;
+          if (_isRecurring(m)) recurringCount++;
+        }
+        // This helps verify detection in your console
+        // You can remove these prints later.
+        // ignore: avoid_print
+        print(
+            'Fetched meetings: total=${meetingSnapshot.docs.length}, recurring=$recurringCount');
       }
     } catch (e) {
+      // ignore: avoid_print
       print("Error fetching meetings: $e");
     }
   }
@@ -99,15 +120,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('team')
-        .doc(user.uid)
-        .get();
+    final doc =
+    await FirebaseFirestore.instance.collection('team').doc(user.uid).get();
 
     if (!mounted || !doc.exists) return;
 
     setState(() {
       userRole = doc['role'] ?? '';
+      // ignore: avoid_print
       print(userRole);
     });
   }
@@ -130,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         toolbarHeight: 120,
         centerTitle: true,
 
-        // 👇 Only show notifications when on Dashboard page (index 0)
+        // Only on Dashboard page
         actions: currentPageIndex == 0
             ? [
           Padding(
@@ -143,7 +163,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const NotificationPage()),
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationPage(),
+                      ),
                     );
                   },
                 ),
@@ -172,9 +194,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ]
             : null,
       ),
-
-
-
       drawer: currentPageIndex == 0 ? drawerSection(context) : null,
       floatingActionButton: currentPageIndex == 0
           ? FloatingActionButton(
@@ -214,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget getCurrentScreen() {
     if (userRole.toLowerCase() == 'admin' && currentPageIndex == 4) {
-      return  AnalyticsDashboard();
+      return AnalyticsDashboard();
     }
 
     switch (currentPageIndex) {
@@ -273,74 +292,123 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    return ListView.builder(
-      itemCount: meetingDocuments.length,
-      itemBuilder: (context, index) {
-        var meeting = meetingDocuments[index];
-        var meetingData = meeting.data() as Map<String, dynamic>;
+    final today = DateTime.now();
 
-        var meetingName = meetingData['title'] ?? 'Unnamed Meeting';
-        DateTime? startTime = (meeting['start_time'] as Timestamp?)?.toDate();
-        DateTime? endTime = (meeting['end_time'] as Timestamp?)?.toDate();
-        String startFormatted =
-        startTime != null ? DateFormat('HH:mm').format(startTime) : 'No Start Time';
-        String endFormatted =
-        endTime != null ? DateFormat('HH:mm').format(endTime) : 'No End Time';
-        String dateFormatted =
-        startTime != null ? DateFormat('yyyy-MM-dd').format(startTime) : 'No Date';
+    // Filter only today's meetings
+    final todayMeetings = meetingDocuments.where((meeting) {
+      final data = meeting.data() as Map<String, dynamic>;
+      final startTime = (data['start_time'] as Timestamp?)?.toDate();
+      if (startTime == null) return false;
+      return startTime.year == today.year &&
+          startTime.month == today.month &&
+          startTime.day == today.day;
+    }).toList();
 
-        var roomId = meetingData['room_id'];
-        QueryDocumentSnapshot? roomData;
+    // Sort by start time
+    todayMeetings.sort((a, b) {
+      final aTime = (a.data() as Map<String, dynamic>)['start_time'] as Timestamp?;
+      final bTime = (b.data() as Map<String, dynamic>)['start_time'] as Timestamp?;
+      if (aTime == null || bTime == null) return 0;
+      return aTime.toDate().compareTo(bTime.toDate());
+    });
 
-        for (var room in roomDocuments) {
-          if (room.id == roomId) {
-            roomData = room;
-            break;
-          }
-        }
-
-        String roomName = 'Unknown Room';
-        String roomLocation = 'Not Available';
-
-        if (roomData != null) {
-          var data = roomData.data() as Map<String, dynamic>;
-          roomName = data.containsKey('name') ? data['name'] : 'Unknown Room';
-          roomLocation = data.containsKey('location') ? data['location'] : 'Not Available';
-        }
-
-
-        return Card(
-          surfaceTintColor: Colors.cyan,
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          child: ListTile(
-            title: Text(meetingName,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                )),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Start Time: $startFormatted'),
-                Text('End Time: $endFormatted'),
-                Text('Meeting Date: $dateFormatted'),
-                Text('Room: $roomName',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                Text('Location: $roomLocation'),
-              ],
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Title
+        Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Text(
+              "Meetings of Today",
+              style: TextStyle(
+                fontSize: 29,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue[900],
+              ),
             ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      MeetingListPage(roomId: roomId, roomName: roomName),
-                ),
-              );
-            },
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Today's meetings cards
+        if (todayMeetings.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Text(
+              "No meetings scheduled for today.",
+              style: TextStyle(fontSize: 16, color: Colors.black54),
+            ),
           ),
-        );
-      },
+        ...todayMeetings.map((meeting) {
+          final data = meeting.data() as Map<String, dynamic>;
+          final startTime = (data['start_time'] as Timestamp?)?.toDate();
+          final endTime = (data['end_time'] as Timestamp?)?.toDate();
+          final roomId = data['room_id'];
+
+          QueryDocumentSnapshot? roomData;
+          for (final room in roomDocuments) {
+            if (room.id == roomId) {
+              roomData = room;
+              break;
+            }
+          }
+
+          String roomName = 'Unknown Room';
+          String roomLocation = 'Not Available';
+          if (roomData != null) {
+            final r = roomData.data() as Map<String, dynamic>?;
+            if (r != null) {
+              roomName = r['name'] ?? 'Unknown Room';
+              roomLocation = r['location'] ?? 'Not Available';
+            }
+          }
+
+          final recurring = _isRecurring(data);
+          final meetingName = data['title'] ?? 'Unnamed Meeting';
+
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            child: ListTile(
+              title: Row(
+                children: [
+                  if (recurring) ...[
+                    const Icon(Icons.repeat, color: Colors.blue, size: 18),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      meetingName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Start: ${startTime != null ? DateFormat('HH:mm').format(startTime) : '--'}'),
+                  Text('End: ${endTime != null ? DateFormat('HH:mm').format(endTime) : '--'}'),
+                  Text('Room: $roomName'),
+                  Text('Location: $roomLocation'),
+                ],
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        MeetingListPage(roomId: roomId, roomName: roomName),
+                  ),
+                );
+              },
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
 
@@ -358,6 +426,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .join(' ');
     });
   }
-
-
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'Screens/DashBoard/notification_screen.dart';
 import 'Screens/Drawer/Preference/theme_provider.dart';
 import 'Screens/Splash/splash_screen.dart';
 import 'Users/taimaajweles/StudioProjects/graduation_project/lib/API/firebase_api.dart';
@@ -12,6 +13,7 @@ import 'firebase_options.dart';
 // Initialize local notifications
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 FlutterLocalNotificationsPlugin();
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // ------------------------------
 // Background message handler
@@ -34,6 +36,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       message.notification!.title,
       message.notification!.body,
       platformDetails,
+      payload: 'notificationPage', // <-- add payload here
     );
   }
 }
@@ -50,8 +53,12 @@ Future<void> _initializeLocalNotifications() async {
   await flutterLocalNotificationsPlugin.initialize(
     initSettings,
     onDidReceiveNotificationResponse: (details) {
-      // Handle notification tap (terminated app)
-      print('Notification clicked: ${details.payload}');
+      // Handle notification tap
+      if (details.payload == 'notificationPage') {
+        navigatorKey.currentState?.pushReplacement(
+          MaterialPageRoute(builder: (_) => const NotificationPage()),
+        );
+      }
     },
   );
 }
@@ -100,8 +107,8 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _setupFCMListeners() {
-    // Foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      // <-- add this block inside the listener
       RemoteNotification? notification = message.notification;
       AndroidNotification? android = message.notification?.android;
 
@@ -119,19 +126,37 @@ class _MyAppState extends State<MyApp> {
               priority: Priority.high,
             ),
           ),
+          payload: message.data['type'] ?? 'notificationPage', // <-- handle deleted meetings here
         );
       }
     });
 
-    // When app is opened via notification
+    // On notification tap (foreground or background)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print("Notification tapped: ${message.notification?.title}");
+      final type = message.data['type'];
+      if (type == 'deleted_meeting') {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const NotificationPage(deleted: true)),
+        );
+      } else {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const NotificationPage()),
+        );
+      }
     });
 
-    // Check if app launched by notification (terminated)
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message != null) {
-        print("App opened from terminated state by notification: ${message.notification?.title}");
+        final type = message.data['type'];
+        if (type == 'deleted_meeting') {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(builder: (_) => const NotificationPage(deleted: true)),
+          );
+        } else {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(builder: (_) => const NotificationPage()),
+          );
+        }
       }
     });
   }
@@ -139,8 +164,8 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-
     return MaterialApp(
+      navigatorKey: navigatorKey, // <-- needed for navigation
       themeMode: themeProvider.themeMode,
       theme: ThemeData(
         colorSchemeSeed: Colors.blue,

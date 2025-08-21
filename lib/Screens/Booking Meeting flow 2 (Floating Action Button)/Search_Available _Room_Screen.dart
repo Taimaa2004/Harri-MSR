@@ -171,23 +171,53 @@ class _AddMeeting1State extends State<AddMeeting1> {
 
     try {
       final meetingsSnapshot = await _firestore.collection('Meetings').get();
+      print("Meetings count: ${meetingsSnapshot.docs.length}");
 
       for (var meeting in meetingsSnapshot.docs) {
-        final mRoomId = meeting['room_id'];
-        final mStart = (meeting['start_time'] as Timestamp).toDate();
-        final mEnd = (meeting['end_time'] as Timestamp).toDate();
+        final data = meeting.data();
 
-        if (selectedStartDateTime.isBefore(mEnd) &&
-            selectedEndDateTime.isAfter(mStart)) {
-          bookedRooms.add(mRoomId.toString());
+        // Skip meetings without necessary fields
+        if (!data.containsKey('room_id') ||
+            !data.containsKey('start_time') ||
+            !data.containsKey('end_time')) {
+          print("⚠️ Skipping meeting without required fields: ${meeting.id}");
+          continue;
+        }
+
+        final mRoomId = data['room_id'].toString();
+
+        final startTimestamp = data['start_time'];
+        final endTimestamp = data['end_time'];
+
+        if (startTimestamp is! Timestamp || endTimestamp is! Timestamp) {
+          print("⚠️ Skipping meeting with invalid timestamps: ${meeting.id}");
+          continue;
+        }
+
+        final mStart = startTimestamp.toDate().toUtc();
+        final mEnd = endTimestamp.toDate().toUtc();
+
+        final selectedStartUtc = selectedStartDateTime.toUtc();
+        final selectedEndUtc = selectedEndDateTime.toUtc();
+
+        print("Checking $mRoomId: $mStart → $mEnd");
+
+        // Check for overlap
+        if (selectedStartUtc.isBefore(mEnd) && selectedEndUtc.isAfter(mStart)) {
+          bookedRooms.add(mRoomId);
+          print("❌ Room $mRoomId marked as booked");
         }
       }
 
       final roomsSnapshot = await _firestore.collection('meeting_rooms').get();
-      final allRooms =
-      roomsSnapshot.docs.map((doc) => doc.id.toString()).toList();
+      final allRooms = roomsSnapshot.docs.map((doc) => doc.id.toString()).toList();
+      print("All rooms: $allRooms");
+      print("Booked rooms: $bookedRooms");
 
-      return allRooms.where((roomId) => !bookedRooms.contains(roomId)).toList();
+      final available = allRooms.where((roomId) => !bookedRooms.contains(roomId)).toList();
+      print("✅ Available rooms: $available");
+
+      return available;
     } catch (e) {
       print("Error fetching available rooms: $e");
       return [];
@@ -237,11 +267,19 @@ class _AddMeeting1State extends State<AddMeeting1> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => BookingScreen(
-                  roomId: roomId, meetingTitle: '',
+                builder: (context) => BookMeetingScreen(
+                  roomId: roomId,
+                  selectedTime: DateTime(
+                    selectedDate!.year,
+                    selectedDate!.month,
+                    selectedDate!.day,
+                    startTime!.hour,
+                    startTime!.minute,
+                  ),
                 ),
               ),
             ),
+
           ),
         );
       }).toList(),

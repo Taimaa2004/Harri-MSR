@@ -3,9 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../../../main.dart' show flutterLocalNotificationsPlugin;
-
-import '../../../main.dart';
+import '../../../main.dart' show flutterLocalNotificationsPlugin, navigatorKey;
+import '../../DashBoard/notification_screen.dart';
 
 class BookMeetingScreen extends StatefulWidget {
   final DateTime selectedTime;
@@ -40,6 +39,7 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
     5: 'Fri', 6: 'Sat', 7: 'Sun',
   };
   List<int> selectedWeekDays = [];
+
   late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
 
   @override
@@ -55,7 +55,17 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
     const InitializationSettings initSettings =
     InitializationSettings(android: androidSettings);
 
-    flutterLocalNotificationsPlugin.initialize(initSettings);
+    flutterLocalNotificationsPlugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (response.payload != null && navigatorKey.currentContext != null) {
+          Navigator.push(
+            navigatorKey.currentContext!,
+            MaterialPageRoute(builder: (_) => const NotificationPage()),
+          );
+        }
+      },
+    );
   }
 
   @override
@@ -103,8 +113,75 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
     }
   }
 
+  Future<bool> _isOverlapping(DateTime startDate, DateTime endDate) async {
+    QuerySnapshot existingMeetings = await FirebaseFirestore.instance
+        .collection('Meetings')
+        .where('room_id', isEqualTo: widget.roomId)
+        .get();
+
+    return existingMeetings.docs.any((doc) {
+      var data = doc.data() as Map<String, dynamic>;
+      DateTime existingStart = (data['start_time'] as Timestamp).toDate();
+      DateTime existingEnd = (data['end_time'] as Timestamp).toDate();
+      return startDate.isBefore(existingEnd) && endDate.isAfter(existingStart);
+    });
+  }
+
+  List<DateTime> _generateRecurrenceDates() {
+    List<DateTime> startDates = [];
+
+    if (recurrenceType == 'None') {
+      startDates.add(selectedStartTime);
+    } else if (recurrenceType == 'Daily' && repeatUntil != null) {
+      DateTime current = selectedStartTime;
+      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
+        startDates.add(current);
+        current = current.add(const Duration(days: 1));
+      }
+    } else if (recurrenceType == 'Weekly' && repeatUntil != null) {
+      DateTime current = selectedStartTime;
+      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
+        if (selectedWeekDays.contains(current.weekday)) {
+          startDates.add(DateTime(
+              current.year, current.month, current.day, selectedStartTime.hour, selectedStartTime.minute));
+        }
+        current = current.add(const Duration(days: 1));
+      }
+    } else if (recurrenceType == 'Monthly' && repeatUntil != null) {
+      DateTime current = selectedStartTime;
+      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
+        startDates.add(current);
+        current = DateTime(current.year, current.month + 1, current.day, current.hour, current.minute);
+      }
+    }
+
+    return startDates..sort();
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<List<Map<String, dynamic>>> getTeamMembers() async {
+    try {
+      QuerySnapshot snapshot = await FirebaseFirestore.instance.collection('team').get();
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return {
+          'id': doc.id,
+          'first_name': data['first_name'] ?? 'No Name',
+          'last_name': data['last_name'] ?? 'No Name',
+          'email': data['email'] ?? '',
+        };
+      }).toList();
+    } catch (e) {
+      print("🔥 Error fetching team members: $e");
+      return [];
+    }
+  }
+
   Future<void> saveMeeting() async {
-    FirebaseFirestore firestore = FirebaseFirestore.instance;
+    final firestore = FirebaseFirestore.instance;
     final currentUser = FirebaseAuth.instance.currentUser;
 
     if (titleController.text.trim().isEmpty) {
@@ -136,8 +213,7 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         return;
       }
 
-      // ✅ Save meeting in Firestore (lowercase "meetings")
-      await firestore.collection('Meetings').add({
+      final meetingDoc = await firestore.collection('Meetings').add({
         'title': titleController.text.trim(),
         'notes': notesController.text.trim().isEmpty ? null : notesController.text.trim(),
         'start_time': Timestamp.fromDate(startDate),
@@ -147,25 +223,28 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         'creatorId': currentUser!.uid,
       });
 
-      // ✅ Optional: Add in-app notification docs
+      _showSnack("Meeting saved successfully!");
+      Navigator.pop(context);
       for (String userId in selectedMemberIds) {
-        final message = userId == currentUser?.uid
+        final message = userId == currentUser.uid
             ? 'You created a meeting: "${titleController.text.trim()}" at ${startDate.toLocal().toString().substring(0, 16)}'
             : 'You have been invited to: "${titleController.text.trim()}"';
 
-        // Add Firestore notification
-        await firestore.collection('notifications').add({
+        final notifRef = await firestore.collection('notifications').add({
           'userId': userId,
           'title': titleController.text.trim(),
-          'body': notesController.text.trim().isNotEmpty
-              ? '$message\nNotes: ${notesController.text.trim()}'
-              : message,
-          'senderName': currentUser?.email ?? "Unknown",
+          'body': message,
+          'senderName': currentUser.email ?? 'Unknown',
           'timestamp': Timestamp.now(),
           'isRead': false,
+          'meetingId': meetingDoc.id,
+          'recurrenceId': recurrenceType != 'None' ? meetingDoc.id : null,
+          'recurrenceType': recurrenceType != 'None' ? recurrenceType : null,
         });
 
-        // Show push notification locally
+        // Save docId for later updates
+        await notifRef.update({'docId': notifRef.id});
+
         await flutterLocalNotificationsPlugin.show(
           0,
           titleController.text.trim(),
@@ -179,78 +258,9 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
               priority: Priority.high,
             ),
           ),
+          payload: meetingDoc.id,
         );
       }
-    }
-
-    if (mounted) Navigator.pop(context);
-  }
-
-  Future<bool> _isOverlapping(DateTime startDate, DateTime endDate) async {
-    QuerySnapshot existingMeetings = await FirebaseFirestore.instance
-        .collection('Meetings')
-        .where('room_id', isEqualTo: widget.roomId)
-        .get();
-
-    return existingMeetings.docs.any((doc) {
-      var data = doc.data() as Map<String, dynamic>;
-      DateTime existingStart = (data['start_time'] as Timestamp).toDate();
-      DateTime existingEnd = (data['end_time'] as Timestamp).toDate();
-      return startDate.isBefore(existingEnd) && endDate.isAfter(existingStart);
-    });
-  }
-
-  List<DateTime> _generateRecurrenceDates() {
-    List<DateTime> startDates = [];
-
-    if (recurrenceType == 'None') {
-      startDates.add(selectedStartTime);
-    } else if (recurrenceType == 'Daily' && repeatUntil != null) {
-      DateTime current = selectedStartTime;
-      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
-        startDates.add(current);
-        current = current.add(const Duration(days: 1));
-      }
-    } else if (recurrenceType == 'Weekly' && repeatUntil != null) {
-      DateTime current = selectedStartTime;
-      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
-        if (selectedWeekDays.contains(current.weekday)) {
-          startDates.add(DateTime(current.year, current.month, current.day,
-              selectedStartTime.hour, selectedStartTime.minute));
-        }
-        current = current.add(const Duration(days: 1));
-      }
-    } else if (recurrenceType == 'Monthly' && repeatUntil != null) {
-      DateTime current = selectedStartTime;
-      while (current.isBefore(repeatUntil!.add(const Duration(days: 1)))) {
-        startDates.add(current);
-        current = DateTime(current.year, current.month + 1, current.day,
-            current.hour, current.minute);
-      }
-    }
-
-    return startDates..sort();
-  }
-
-  void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Future<List<Map<String, dynamic>>> getTeamMembers() async {
-    try {
-      QuerySnapshot snapshot = await FirebaseFirestore.instance.collection('team').get();
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return {
-          'id': doc.id,
-          'first_name': data['first_name'] ?? 'No Name',
-          'last_name': data['last_name'] ?? 'No Name',
-          'email': data['email'] ?? '',
-        };
-      }).toList();
-    } catch (e) {
-      print("🔥 Error fetching team members: $e");
-      return [];
     }
   }
 
@@ -269,10 +279,7 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
             ),
           ),
         ),
-        title: const Text(
-          "Book Meeting",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text("Book Meeting", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: FutureBuilder(
@@ -330,7 +337,6 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
                             member['last_name'].toLowerCase().contains(searchQuery))
                             .map((member) {
                           final fullName = '${member['first_name']} ${member['last_name']}';
-
                           return CheckboxListTile(
                             title: Text(fullName),
                             subtitle: Text(member['email']),
@@ -356,15 +362,13 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
                   DropdownButtonFormField<String>(
                     value: recurrenceType,
                     decoration: _inputDecoration("Recurrence", Icons.repeat),
-                    items: recurrenceOptions.map((option) =>
-                        DropdownMenuItem<String>(value: option, child: Text(option))
-                    ).toList(),
+                    items: recurrenceOptions
+                        .map((option) => DropdownMenuItem<String>(value: option, child: Text(option)))
+                        .toList(),
                     onChanged: (val) {
                       setState(() {
                         recurrenceType = val!;
-                        if (recurrenceType != 'Weekly') {
-                          selectedWeekDays.clear();
-                        }
+                        if (recurrenceType != 'Weekly') selectedWeekDays.clear();
                       });
                     },
                   ),
@@ -377,22 +381,16 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
                         final day = entry.key;
                         final label = entry.value;
                         final isSelected = selectedWeekDays.contains(day);
-
                         return FilterChip(
                           label: Text(label),
                           selected: isSelected,
                           onSelected: (selected) {
                             setState(() {
-                              if (selected) {
-                                selectedWeekDays.add(day);
-                              } else {
-                                selectedWeekDays.remove(day);
-                              }
+                              if (selected) selectedWeekDays.add(day);
+                              else selectedWeekDays.remove(day);
                             });
                           },
-
                         );
-
                       }).toList(),
                     ),
                   ],
@@ -409,9 +407,7 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
                           firstDate: selectedStartTime,
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                         );
-                        if (picked != null) {
-                          setState(() => repeatUntil = picked);
-                        }
+                        if (picked != null) setState(() => repeatUntil = picked);
                       },
                     ),
                 ]),
@@ -429,17 +425,16 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
 
                 const SizedBox(height: 24),
 
-
                 ElevatedButton.icon(
                   icon: const Icon(Icons.save),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    backgroundColor: Colors.blue.shade600,
-                    foregroundColor: Colors.white
-                  ),
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      backgroundColor: Colors.blue.shade600,
+                      foregroundColor: Colors.white),
                   onPressed: saveMeeting,
-                  label: const Text("Save Meeting", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  label: const Text("Save Meeting",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

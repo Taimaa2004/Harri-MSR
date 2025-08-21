@@ -15,6 +15,8 @@ class _TeamscreenState extends State<Teamscreen> {
   final FirebaseAuth auth = FirebaseAuth.instance;
 
   String? userRole;
+  String searchQuery = "";
+  final TextEditingController searchController = TextEditingController();
 
   @override
   void initState() {
@@ -24,7 +26,8 @@ class _TeamscreenState extends State<Teamscreen> {
 
   Future<void> _fetchCurrentUserRole() async {
     String uid = auth.currentUser!.uid;
-    DocumentSnapshot userDoc = await firestore.collection('team').doc(uid).get();
+    DocumentSnapshot userDoc =
+    await firestore.collection('team').doc(uid).get();
 
     if (userDoc.exists) {
       setState(() {
@@ -40,7 +43,9 @@ class _TeamscreenState extends State<Teamscreen> {
   Stream<List<Map<String, dynamic>>> _getTeamMembersStream() {
     String currentUserUid = auth.currentUser!.uid;
     return firestore.collection('team').snapshots().map((snapshot) {
-      return snapshot.docs.where((doc) => doc.id != currentUserUid).map((doc) {
+      return snapshot.docs
+          .where((doc) => doc.id != currentUserUid)
+          .map((doc) {
         var data = doc.data();
         return {
           'firstName': data['first_name'] ?? 'No First Name',
@@ -106,7 +111,31 @@ class _TeamscreenState extends State<Teamscreen> {
       appBar: AppBar(
         title: Text(
           "Team Members",
-          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        ),
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: searchController,
+              onChanged: (value) {
+                setState(() {
+                  searchQuery = value.toLowerCase();
+                });
+              },
+              decoration: InputDecoration(
+                hintText: "Search team members...",
+                prefixIcon: Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
       body: userRole == null
@@ -126,12 +155,26 @@ class _TeamscreenState extends State<Teamscreen> {
             return Center(child: Text('No team members found.'));
           }
 
+          // Filter members by search query
+          var filteredMembers = snapshot.data!.where((member) {
+            final fullName =
+            "${member['firstName']} ${member['lastName']}".toLowerCase();
+            final email = member['email'].toLowerCase();
+            return fullName.contains(searchQuery) ||
+                email.contains(searchQuery);
+          }).toList();
+
+          if (filteredMembers.isEmpty) {
+            return Center(child: Text("No results found."));
+          }
+
           return ListView.builder(
-            itemCount: snapshot.data!.length,
+            itemCount: filteredMembers.length,
             itemBuilder: (context, index) {
-              var member = snapshot.data![index];
+              var member = filteredMembers[index];
               return Card(
-                margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                margin:
+                EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -146,6 +189,7 @@ class _TeamscreenState extends State<Teamscreen> {
                     style: TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold),
                   ),
+                  subtitle: Text(member['email']),
                   onTap: () => showProfileScreen(context, member),
                 ),
               );

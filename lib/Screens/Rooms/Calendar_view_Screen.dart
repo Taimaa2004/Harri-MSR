@@ -15,6 +15,7 @@ class MeetingListPage extends StatefulWidget {
   final String roomId;
   final String roomName;
 
+
   const MeetingListPage(
       {super.key, required this.roomId, required this.roomName});
 
@@ -27,7 +28,7 @@ class _MeetingListPageState extends State<MeetingListPage> {
   List<Appointment> meetings = [];
   StreamSubscription<QuerySnapshot>? _meetingSub;
 
-
+  bool _isInitialLoad = true;
   late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
 
   @override
@@ -68,6 +69,7 @@ class _MeetingListPageState extends State<MeetingListPage> {
     _meetingSub?.cancel();
     super.dispose();
   }
+
   Future<void> sendLocalNotification(String title, String body) async {
     await flutterLocalNotificationsPlugin.show(
       title.hashCode,
@@ -94,17 +96,21 @@ class _MeetingListPageState extends State<MeetingListPage> {
         .listen((snapshot) {
       List<Appointment> fetchedMeetings = [];
 
-      // Handle added/modified/removed documents
       for (var change in snapshot.docChanges) {
         var data = change.doc.data() as Map<String, dynamic>;
         DateTime? startTime = (data['start_time'] as Timestamp?)?.toDate();
         DateTime? endTime = (data['end_time'] as Timestamp?)?.toDate();
         String meetingName = data['title'] ?? 'Untitled Meeting';
 
-        if (change.type == DocumentChangeType.removed) {
-          // Notify users about deletion
-          sendLocalNotification(
-              'Meeting Cancelled', 'The meeting "$meetingName" was deleted.');
+        // Only notify for changes after initial load
+        if (!_isInitialLoad) {
+          if (change.type == DocumentChangeType.added) {
+            sendLocalNotification('New Meeting', 'The meeting "$meetingName" was added.');
+          } else if (change.type == DocumentChangeType.modified) {
+            sendLocalNotification('Meeting Updated', 'The meeting "$meetingName" was updated.');
+          } else if (change.type == DocumentChangeType.removed) {
+            sendLocalNotification('Meeting Cancelled', 'The meeting "$meetingName" was deleted.');
+          }
         }
 
         if (startTime != null && endTime != null && change.type != DocumentChangeType.removed) {
@@ -121,6 +127,9 @@ class _MeetingListPageState extends State<MeetingListPage> {
       setState(() {
         meetings = fetchedMeetings;
       });
+
+      // After first snapshot, allow notifications
+      if (_isInitialLoad) _isInitialLoad = false;
     });
   }
 
