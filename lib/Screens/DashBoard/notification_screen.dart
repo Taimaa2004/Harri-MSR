@@ -37,7 +37,8 @@ class _NotificationPageState extends State<NotificationPage> {
       )
           : currentUser == null
           ? const Center(child: Text("No user logged in"))
-          : StreamBuilder<QuerySnapshot>(
+          :
+      StreamBuilder<QuerySnapshot>(
         stream: firestore
             .collection('notifications')
             .where('userId', isEqualTo: currentUser.uid)

@@ -1,9 +1,18 @@
+// Buildscript block must come FIRST in Gradle 8+
+buildscript {
+    ext.kotlin_version = '1.9.20'
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "com.google.gms:google-services:4.4.0" // Firebase
+    }
+}
+
 plugins {
     id "com.android.application"
-    // START: FlutterFire Configuration
-    id 'com.google.gms.google-services'
-    // END: FlutterFire Configuration
     id "kotlin-android"
+    // START: FlutterFire Configuration
+    id "com.google.gms.google-services"
+    // END: FlutterFire Configuration
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
 }
@@ -45,5 +54,5 @@ dependencies {
 
 flutter {
     source = "../.."
-}
 
+}

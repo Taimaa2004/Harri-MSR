@@ -226,7 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
         } else if (e.code == 'wrong-password') {
           _errorMessage = 'Wrong password provided for that user.';
         } else {
-          _errorMessage = 'An error occurred. Please try again.';
+          _errorMessage = 'Wrong password provided. Please try again.';
         }
       });
     } catch (e) {

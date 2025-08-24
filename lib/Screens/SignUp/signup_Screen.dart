@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:graduation_project/Screens/workspace/create_Workspace_Screen.dart';
 import 'package:graduation_project/Screens/LogIn/logIn_Screen.dart';
 
+import '../DashBoard/dashboard_screen.dart';
+
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
@@ -19,6 +21,8 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController phoneController = TextEditingController();
+
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -42,11 +46,12 @@ class _SignupScreenState extends State<SignupScreen> {
         'last_name': lastNameController.text.trim(),
         'email': emailController.text.trim(),
         'password': passwordController.text.trim(),
+        'phone': phoneController.text.trim(),
       });
-
-      Navigator.push(
+      Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => CreateWorkspace()),
+        MaterialPageRoute(builder: (context) => DashboardScreen()),
+            (route) => false,
       );
 
     } on FirebaseAuthException catch (e) {
@@ -145,6 +150,21 @@ class _SignupScreenState extends State<SignupScreen> {
                       return null;
                     }),
                     const SizedBox(height: 15),
+                    const SizedBox(height: 15),
+                    _buildTextField(
+                      phoneController,
+                      "Mobile Phone",
+                      Icons.phone,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your mobile number';
+                        } else if (!RegExp(r'^\+?[0-9]{7,15}$').hasMatch(value)) {
+                          return 'Enter a valid phone number';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 15),
                     _buildTextField(passwordController, "Password", Icons.lock, obscureText: true),
                     const SizedBox(height: 15),
                     _buildTextField(confirmPasswordController, "Confirm Password", Icons.lock,
@@ -168,7 +188,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: _isLoading
                           ? const CircularProgressIndicator(color: Colors.lightBlue)
                           : const Text(
-                        'Continue',
+                        'Sign Up!',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),

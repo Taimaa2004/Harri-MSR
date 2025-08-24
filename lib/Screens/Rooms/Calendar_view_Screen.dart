@@ -16,6 +16,7 @@ class MeetingListPage extends StatefulWidget {
   final String roomName;
 
 
+
   const MeetingListPage(
       {super.key, required this.roomId, required this.roomName});
 
@@ -30,6 +31,7 @@ class _MeetingListPageState extends State<MeetingListPage> {
 
   bool _isInitialLoad = true;
   late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
+  String? newlyBookedMeetingId;
 
   @override
   void initState() {
@@ -104,9 +106,7 @@ class _MeetingListPageState extends State<MeetingListPage> {
 
         // Only notify for changes after initial load
         if (!_isInitialLoad) {
-          if (change.type == DocumentChangeType.added) {
-            sendLocalNotification('New Meeting', 'The meeting "$meetingName" was added.');
-          } else if (change.type == DocumentChangeType.modified) {
+         if (change.type == DocumentChangeType.modified) {
             sendLocalNotification('Meeting Updated', 'The meeting "$meetingName" was updated.');
           } else if (change.type == DocumentChangeType.removed) {
             sendLocalNotification('Meeting Cancelled', 'The meeting "$meetingName" was deleted.');
@@ -118,10 +118,11 @@ class _MeetingListPageState extends State<MeetingListPage> {
             startTime: startTime,
             endTime: endTime,
             subject: meetingName,
-            color: Colors.blueAccent,
+            color: change.doc.id == newlyBookedMeetingId ? Colors.green : Colors.blueAccent, // <-- newly booked is green
             id: change.doc.id,
           ));
         }
+
       }
 
       setState(() {
@@ -159,9 +160,16 @@ class _MeetingListPageState extends State<MeetingListPage> {
       context,
       MaterialPageRoute(
         builder: (context) => BookMeetingScreen(
-            selectedTime: selectedTime, roomId: widget.roomId),
+          selectedTime: selectedTime,
+          roomId: widget.roomId,
+        ),
       ),
-    );
+    ).then((newMeetingId) {
+      if (newMeetingId != null) {
+        newlyBookedMeetingId = newMeetingId; // store the newly booked meeting ID
+      }
+      fetchMeetings();
+    });
   }
 
   Future<void> deleteMeeting(String meetingId) async {
@@ -375,7 +383,7 @@ class _MeetingListPageState extends State<MeetingListPage> {
                     ] else ...[
                       TextButton.icon(
                         icon: const Icon(Icons.notifications_active, color: Colors.blue),
-                        label: const Text('Notify Me', style: TextStyle(color: Colors.blue)),
+                        label: const Text('Notify Me if canceled', style: TextStyle(color: Colors.blue)),
                         onPressed: () async {
                           Navigator.pop(context);
                           await subscribeNotifyMe(meetingId);
@@ -455,16 +463,10 @@ class _MeetingListPageState extends State<MeetingListPage> {
             Expanded(
               child: SfCalendar(
                 view: CalendarView.day,
-                showNavigationArrow: true,
-                showWeekNumber: true,
-                dataSource: MeetingDataSource(meetings),
                 onTap: onTap,
-                timeSlotViewSettings: const TimeSlotViewSettings(
-                  timeTextStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
                 todayHighlightColor: Colors.blueAccent,
                 selectionDecoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: Colors.lightBlue.withOpacity(0.3), // baby blue for empty slot
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.blueAccent, width: 1.5),
                 ),
@@ -472,7 +474,9 @@ class _MeetingListPageState extends State<MeetingListPage> {
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
+                dataSource: MeetingDataSource(meetings),
               ),
+
             ),
             const SizedBox(height: 16),
           ],

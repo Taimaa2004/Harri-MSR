@@ -223,8 +223,6 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         'creatorId': currentUser!.uid,
       });
 
-      _showSnack("Meeting saved successfully!");
-      Navigator.pop(context);
       for (String userId in selectedMemberIds) {
         final message = userId == currentUser.uid
             ? 'You created a meeting: "${titleController.text.trim()}" at ${startDate.toLocal().toString().substring(0, 16)}'
@@ -242,7 +240,6 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
           'recurrenceType': recurrenceType != 'None' ? recurrenceType : null,
         });
 
-        // Save docId for later updates
         await notifRef.update({'docId': notifRef.id});
 
         await flutterLocalNotificationsPlugin.show(
@@ -262,6 +259,10 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         );
       }
     }
+
+    // Only pop after all meetings are saved
+    _showSnack("Meeting saved successfully!");
+    Navigator.pop(context);
   }
 
   @override

@@ -16,7 +16,7 @@ class WelcomeScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Image.asset('Images/logo.png', width: 300, height: 320),
+            Image.asset('Images/logo2.png', width: 300, height: 320),
             const SizedBox(height: 60),
             const Text(
               'Reserve your perfect meeting room in seconds!',

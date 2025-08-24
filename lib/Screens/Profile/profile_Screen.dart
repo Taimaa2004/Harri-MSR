@@ -37,8 +37,8 @@ class ProfileScreen extends StatelessWidget {
         userData['first_name'] = userData['first_name'] ?? 'No Name';
         userData['last_name'] = userData['last_name'] ?? 'No Name';
         userData['email'] = user.email;
-        userData['phone'] = userData['phone'] ?? 'Not Provided';
-        userData['location'] = userData['location'] ?? 'Unknown';
+        userData['phone'] = userData['phone'] ?? '';
+        userData['location'] = userData['location'] ?? 'palestine';
         userData['joinedDate'] = user.metadata.creationTime?.toLocal().toString().split(' ')[0] ?? 'N/A';
         userData['profilePic'] = user.photoURL;
         return Scaffold(

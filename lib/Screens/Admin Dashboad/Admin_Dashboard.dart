@@ -228,7 +228,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 60,
+                reservedSize: 50,
                 getTitlesWidget: (value, meta) {
                   final index = value.toInt();
                   if (index < 0 || index >= data.length) return Container();
