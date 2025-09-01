@@ -17,7 +17,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     checkLoginStatus();
 
-    Future.delayed(const Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 2), () {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const WelcomeScreen()),

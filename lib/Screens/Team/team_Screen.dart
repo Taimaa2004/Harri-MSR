@@ -26,16 +26,17 @@ class _TeamscreenState extends State<Teamscreen> {
 
   Future<void> _fetchCurrentUserRole() async {
     String uid = auth.currentUser!.uid;
-    DocumentSnapshot userDoc =
-    await firestore.collection('team').doc(uid).get();
+    DocumentSnapshot userDoc = await firestore.collection('team').doc(uid).get();
 
     if (userDoc.exists) {
+      Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
       setState(() {
-        userRole = userDoc.get('role') ?? 'member';
+        // Default to "emp" if 'role' doesn't exist
+        userRole = data.containsKey('role') ? data['role'] : 'emp';
       });
     } else {
       setState(() {
-        userRole = 'member';
+        userRole = 'Employee';
       });
     }
   }
@@ -51,7 +52,7 @@ class _TeamscreenState extends State<Teamscreen> {
           'firstName': data['first_name'] ?? 'No First Name',
           'lastName': data['last_name'] ?? 'No Last Name',
           'email': data['email'] ?? 'No Email',
-          'role': data['role'] ?? 'No Role',
+          'role': data.containsKey('role') ? data['role'] : 'Employee', // default to "emp"
         };
       }).toList();
     });

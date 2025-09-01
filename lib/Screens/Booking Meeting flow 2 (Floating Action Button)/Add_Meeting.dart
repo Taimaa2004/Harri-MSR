@@ -203,6 +203,7 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
     }
 
     List<DateTime> startDates = _generateRecurrenceDates();
+    String? recurrenceId;
 
     for (final startDate in startDates) {
       final endDate = startDate.add(selectedEndTime.difference(selectedStartTime));
@@ -222,42 +223,86 @@ class _BookMeetingScreenState extends State<BookMeetingScreen> {
         'creatorId': currentUser!.uid,
       });
 
-      // Notifications
-      for (String userId in selectedMemberIds) {
-        final message = userId == currentUser.uid
-            ? 'You created a meeting: "${titleController.text.trim()}" at ${startDate.toLocal().toString().substring(0, 16)}'
-            : 'You have been invited to: "${titleController.text.trim()}"';
+      // Save the first meeting ID as the recurrence ID for notifications
+      if (recurrenceType != 'None' && recurrenceId == null) {
+        recurrenceId = meetingDoc.id;
+      }
 
-        final notifRef = await firestore.collection('notifications').add({
-          'userId': userId,
-          'title': titleController.text.trim(),
-          'body': message,
-          'senderName': currentUser.email ?? 'Unknown',
-          'timestamp': Timestamp.now(),
-          'isRead': false,
-          'meetingId': meetingDoc.id,
-          'recurrenceId': recurrenceType != 'None' ? meetingDoc.id : null,
-          'recurrenceType': recurrenceType != 'None' ? recurrenceType : null,
-        });
+      // Only send notifications once per user for recurring meetings
+      if (recurrenceType == 'None' || recurrenceId == meetingDoc.id) {
+        for (String userId in selectedMemberIds) {
+          if (userId == currentUser!.uid) {
+            // Creator notification
+            final message = 'You created a meeting: "${titleController.text.trim()}" at ${selectedStartTime.toLocal().toString().substring(0, 16)}';
 
-        // Save docId for later updates
-        await notifRef.update({'docId': notifRef.id});
+            final notifRef = await firestore.collection('notifications').add({
+              'userId': userId,
+              'title': titleController.text.trim(),
+              'body': message,
+              'senderName': currentUser.email ?? 'Unknown',
+              'timestamp': Timestamp.now(),
+              'isRead': false,
+              'meetingId': meetingDoc.id,
+              'recurrenceId': recurrenceType != 'None' ? recurrenceId : null,
+              'recurrenceType': recurrenceType != 'None' ? recurrenceType : null,
+            });
 
-        await flutterLocalNotificationsPlugin.show(
-          0,
-          titleController.text.trim(),
-          message,
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'meeting_channel',
-              'Meetings',
-              channelDescription: 'Notifications for new meetings',
-              importance: Importance.max,
-              priority: Priority.high,
-            ),
-          ),
-          payload: meetingDoc.id,
-        );
+            await notifRef.update({'docId': notifRef.id});
+
+            await flutterLocalNotificationsPlugin.show(
+              0,
+              titleController.text.trim(),
+              message,
+              const NotificationDetails(
+                android: AndroidNotificationDetails(
+                  'meeting_channel',
+                  'Meetings',
+                  channelDescription: 'Notifications for new meetings',
+                  importance: Importance.max,
+                  priority: Priority.high,
+                ),
+              ),
+              payload: meetingDoc.id,
+            );
+
+            continue; // Skip the rest for this user
+          }
+
+          // Only send invite once for recurring meetings
+          if (recurrenceType == 'None' || recurrenceId == meetingDoc.id) {
+            final message = 'You have been invited to: "${titleController.text.trim()}"';
+
+            final notifRef = await firestore.collection('notifications').add({
+              'userId': userId,
+              'title': titleController.text.trim(),
+              'body': message,
+              'senderName': currentUser.email ?? 'Unknown',
+              'timestamp': Timestamp.now(),
+              'isRead': false,
+              'meetingId': meetingDoc.id,
+              'recurrenceId': recurrenceType != 'None' ? recurrenceId : null,
+              'recurrenceType': recurrenceType != 'None' ? recurrenceType : null,
+            });
+
+            await notifRef.update({'docId': notifRef.id});
+
+            await flutterLocalNotificationsPlugin.show(
+              0,
+              titleController.text.trim(),
+              message,
+              const NotificationDetails(
+                android: AndroidNotificationDetails(
+                  'meeting_channel',
+                  'Meetings',
+                  channelDescription: 'Notifications for new meetings',
+                  importance: Importance.max,
+                  priority: Priority.high,
+                ),
+              ),
+              payload: meetingDoc.id,
+            );
+          }
+        }
       }
     }
 
